@@ -939,6 +939,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
           <option value="1.50">₹1.5 Cr</option>
           <option value="2.00">₹2 Cr</option>
         </select>
+        <button class="btn btn-danger btn-sm" onclick="deleteAllPlayers()" style="white-space:nowrap">🗑️ Delete All Players</button>
       </div>
     </div>
     <div class="table-container" id="playerTableContainer"><div class="empty-state" style="padding:2rem"><div class="empty-state-icon">📋</div><div class="empty-state-text">No Players</div></div></div>
@@ -2296,13 +2297,30 @@ window.addEventListener('DOMContentLoaded', ()=>{
   updatePlayerUI(); updateMatchCount();
 });
 
+function deleteAllPlayers() {
+  if (!state.players.length) return toast('No players to delete', 'info');
+  if (!confirm('Delete ALL ' + state.players.length + ' players? This cannot be undone.')) return;
+  // Also remove players from teams
+  state.teams.forEach(t => { t.players = []; t.budget = t.originalBudget || t.budget; });
+  state.players = [];
+  window.state = state;
+  renderTeams();
+  renderPlayerTable();
+  updatePlayerUI();
+  updateMatchCount();
+  saveState();
+  toast('All players deleted', 'info');
+}
+
 function clearAllData() {
   if (!confirm('Delete all saved data?')) return;
   localStorage.removeItem(SKEY);
-  state=defaultState();
+  state = defaultState();
+  window.state = state; // sync so Firebase module sees empty state
   renderTeams(); renderPlayerTable(); renderConstraintsPanel();
   updatePlayerUI(); updateMatchCount();
   document.getElementById('storageBanner')?.remove();
+  if (typeof broadcastState === 'function') broadcastState(); // push empty state to Firebase
   toast('Data cleared','info');
 }
 </script>
