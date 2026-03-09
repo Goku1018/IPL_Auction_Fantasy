@@ -852,88 +852,29 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
     </div>
     <div class="progress-bar" style="margin-bottom:1.25rem"><div class="progress-fill" id="aProgressBar" style="width:0%"></div></div>
 
-    <!-- 3-column master layout -->
-    <div class="auction-master-layout">
-
-      <!-- LEFT: Randomizer Panel -->
-      <div>
-        <div class="rand-panel" style="margin-bottom:1rem">
-          <div class="panel-title">🎲 Randomizer</div>
-
-          <!-- Mode switch: Spin / Browse -->
-          <div class="mode-toggle">
-            <button class="mode-btn active" id="modeSpinBtn" onclick="setMode('spin')">🎰 Spin</button>
-            <button class="mode-btn" id="modeBrowseBtn" onclick="setMode('browse')">🔎 Browse</button>
-          </div>
-
-          <!-- Filters (shared) -->
-          <div style="font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.4rem">Role</div>
-          <div class="chip-group">
-            <div class="chip active" onclick="toggleChip(this,'role','Batsman')">🏏 Bat</div>
-            <div class="chip active c-bowl" onclick="toggleChip(this,'role','Bowler')">⚾ Bowl</div>
-            <div class="chip active c-ar" onclick="toggleChip(this,'role','All-Rounder')">⚡ AR</div>
-            <div class="chip active c-wk" onclick="toggleChip(this,'role','Wicket-Keeper')">🧤 WK</div>
-          </div>
-          <div style="font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.4rem">Country</div>
-          <div class="chip-group">
-            <div class="chip active" onclick="toggleChip(this,'country','Indian')">🇮🇳 Indian</div>
-            <div class="chip active c-overseas" onclick="toggleChip(this,'country','Overseas')">🌍 Overseas</div>
-          </div>
-          <div style="font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.4rem">Status</div>
-          <div class="chip-group">
-            <div class="chip active" id="chipPending" onclick="toggleStatusChip(this,'pending')">⏳ Pending</div>
-            <div class="chip" id="chipUnsold" onclick="toggleStatusChip(this,'unsold')">❌ Unsold</div>
-          </div>
-          <div style="font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.3rem">Price Range (₹Cr)</div>
-          <div class="range-row"><span style="font-size:.68rem;color:var(--text-dim);width:22px">Min</span><input type="range" id="priceMin" min="0.1" max="20" step="0.1" value="0.1" oninput="updateRangeLabel('priceMin','lblMin')"/><span class="range-label" id="lblMin">0.1</span></div>
-          <div class="range-row"><span style="font-size:.68rem;color:var(--text-dim);width:22px">Max</span><input type="range" id="priceMax" min="0.1" max="20" step="0.1" value="20" oninput="updateRangeLabel('priceMax','lblMax')"/><span class="range-label" id="lblMax">20</span></div>
-          <div class="match-pill">🎯 <strong id="matchCount">0</strong>&nbsp;matching</div>
-
-          <!-- Spin mode -->
-          <div id="modeSpin">
-            <button class="spin-btn" id="spinBtn" onclick="spinRandom()" style="width:100%">🎲 SPIN</button>
-          </div>
-
-
-          <!-- Browse mode -->
-          <div id="modeBrowse" style="display:none">
-            <input type="text" id="browseSearch" placeholder="Search player name…" oninput="renderBrowse()" style="width:100%;margin-bottom:.5rem;font-size:.82rem;"/>
-            <div id="browseList" style="max-height:220px;overflow-y:auto;"></div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- CENTER: Spotlight + Controls -->
-      <div class="spotlight-wrap">
+    <!-- Spotlight centered -->
+    <div style="display:flex;justify-content:center;margin-bottom:1.5rem;">
+      <div class="spotlight-wrap" style="width:100%;max-width:580px;">
         <!-- Spotlight card -->
         <div class="player-spotlight" id="spotlightCard">
           <div class="empty-state">
             <div class="empty-state-icon">🎲</div>
-            <div class="empty-state-text">Ready to Start</div>
-            <div class="empty-state-sub">Use filters &amp; hit Spin to bring a player up</div>
+            <div class="empty-state-text">Waiting for Auction</div>
+            <div class="empty-state-sub">Admin will spin the next player</div>
           </div>
         </div>
-
-        <!-- Action buttons -->
-        <div class="action-bar">
-          <button class="btn btn-success" id="btnSell" onclick="sellPlayer()" style="display:none">✅ SOLD!</button>
-          <button class="btn btn-danger" id="btnUnsold" onclick="unsoldPlayer()" style="display:none">❌ Unsold</button>
-          <button class="btn btn-outline" id="btnUndo" onclick="undoLastMove()" style="display:none" title="Undo last action">↺ Undo</button>
-        </div>
-
         <!-- Auction log -->
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="margin-bottom:.75rem;padding-bottom:.6rem"><div class="card-icon" style="font-size:.9rem">📜</div><div class="card-title" style="font-size:1rem">Log</div></div>
           <div class="auction-log" id="auctionLog"><div style="text-align:center;padding:.75rem;color:var(--text-dim);font-size:.8rem">Auction log appears here…</div></div>
         </div>
       </div>
+    </div>
 
-      <!-- RIGHT: Teams -->
-      <div class="teams-panel">
-        <div class="panel-title">🏟️ Bidding Teams</div>
-        <div id="auctionTeamsList"></div>
-      </div>
+    <!-- Teams grid below -->
+    <div>
+      <div class="panel-title" style="margin-bottom:1rem;">🏟️ Bidding Teams</div>
+      <div id="auctionTeamsList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;"></div>
     </div>
   </div>
 </div>
@@ -1203,6 +1144,7 @@ function startEditTeam(id) {
   const card = document.getElementById('tcard-'+id);
   if (!card) return;
   pendingEditLogoDataUrl = null;
+  const safeName = t.name.replace(/"/g, '&quot;');
   const overlay = document.createElement('div');
   overlay.className = 'team-edit-overlay';
   overlay.id = 'tedit-overlay-'+id;
@@ -1213,7 +1155,7 @@ function startEditTeam(id) {
       <div style="font-size:.6rem;color:var(--text-dim);margin-top:.2rem">Click to change logo</div>
     </div>
     <input type="file" id="tedit-logo-input-${id}" accept="image/*" style="display:none" onchange="previewEditLogo(${id},this)"/>
-    <input id="tedit-name-${id}" type="text" value="${t.name.replace(/"/g,'&quot;')}" maxlength="40"
+    <input id="tedit-name-${id}" type="text" value="${safeName}" maxlength="40"
       style="width:100%;background:var(--card2);border:1px solid rgba(255,215,0,0.4);color:#fff;border-radius:6px;padding:.3rem .5rem;font-size:.82rem;font-family:'Barlow Condensed',sans-serif;text-align:center;box-sizing:border-box"
       onkeydown="if(event.key==='Enter')saveEditTeam(${id});if(event.key==='Escape')cancelEditTeam(${id})"/>
     <div style="display:flex;gap:.4rem;margin-top:.25rem;width:100%">
@@ -1468,7 +1410,6 @@ function setMode(mode) {
   });
   document.getElementById('modeSpin').style.display = mode==='spin'?'':'none';
   document.getElementById('modeBrowse').style.display = mode==='browse'?'':'none';
-  if (mode==='browse') renderBrowse();
 }
 
 function toggleChip(el, type, value) {
@@ -1476,14 +1417,14 @@ function toggleChip(el, type, value) {
   const set = type==='role' ? rand.roles : rand.countries;
   if (set.has(value)) set.delete(value); else set.add(value);
   updateMatchCount();
-  if (rand.mode==='browse') renderBrowse();
+  
 }
 
 function toggleStatusChip(el, value) {
   el.classList.toggle('active');
   if (rand.statuses.has(value)) rand.statuses.delete(value); else rand.statuses.add(value);
   updateMatchCount();
-  if (rand.mode==='browse') renderBrowse();
+  
 }
 
 function updateRangeLabel(inputId, labelId) {
@@ -1491,7 +1432,7 @@ function updateRangeLabel(inputId, labelId) {
   document.getElementById(labelId).textContent = v.toFixed(1);
   rand[inputId==='priceMin'?'priceMin':'priceMax'] = v;
   updateMatchCount();
-  if (rand.mode==='browse') renderBrowse();
+  
 }
 
 function getPool() {
@@ -2230,8 +2171,7 @@ try {
       state = window.state; // sync local reference
       updatePlayerUI(); updateMatchCount();
       renderPlayerTable(); renderResults();
-      const auc = document.getElementById('tab-auction');
-      if (auc && auc.classList.contains('active')) renderBrowse();
+      if (document.getElementById('auctionTeamsList')) renderAuctionTeams();
       applyViewerRestrictions();
       if (ping) {
         ping.style.opacity = '1';
