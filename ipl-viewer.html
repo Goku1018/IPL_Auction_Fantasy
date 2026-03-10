@@ -2200,29 +2200,47 @@ try {
     if (!data || !data.payload) return;
     try {
       window.state = JSON.parse(data.payload);
-      state = window.state; // sync local reference
+      state = window.state;
       updatePlayerUI(); updateMatchCount();
       renderPlayerTable(); renderResults();
-      // Update auction room if visible
       if (document.getElementById('auctionTeamsList')) renderAuctionTeams();
-      // Update spotlight with current player
-      if (state.auction && state.auction.currentPlayer && state.auction.inProgress) {
-        if (typeof renderSpotlight === 'function') renderSpotlight(state.auction.currentPlayer, true);
-      } else if (state.auction && !state.auction.inProgress) {
-        const pendingLeft = state.players.filter(p=>p.status==='pending').length;
-        const card = document.getElementById('spotlightCard');
-        if (card && !state.auction.currentPlayer) {
-          card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div><div class="empty-state-text">'+(pendingLeft?'Waiting for next spin':'Auction Complete! 🏆')+'</div><div class="empty-state-sub">'+(pendingLeft?pendingLeft+' players remaining':'All players auctioned')+'</div></div>';
+
+      // ── Spotlight: spin animation / current player / idle ──
+      const card = document.getElementById('spotlightCard');
+      if (card) {
+        const au = state.auction || {};
+        if (au.spinning && au.spinName) {
+          // Mirror spin animation from admin
+          const roleBadge = {'Batsman':'badge-bat','Bowler':'badge-bowl','All-Rounder':'badge-ar','Wicket-Keeper':'badge-wk'};
+          card.innerHTML =
+            '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'
+              + (au.spinCountry||'') + ' · ' + (au.spinRole||'') +
+            '</div>'
+            + '<div class="spotlight-name spinning">' + au.spinName + '</div>'
+            + '<div style="display:flex;gap:.6rem;justify-content:center;margin:.4rem 0;flex-wrap:wrap">'
+            +   '<span class="badge '+(roleBadge[au.spinRole]||'')+'">'+(au.spinRole||'')+'</span>'
+            +   '<span class="badge '+(au.spinCountry==='Indian'?'badge-indian':'badge-overseas')+'">'+(au.spinCountry||'')+'</span>'
+            + '</div>'
+            + '<div style="font-family:Teko,sans-serif;font-size:1.8rem;color:var(--gold)">₹'+(au.spinBase||0).toFixed(2)+' Cr</div>';
+        } else if (au.currentPlayer && au.inProgress) {
+          // Player locked in — show spotlight with live bid
+          if (typeof renderSpotlight === 'function') renderSpotlight(au.currentPlayer, true);
+        } else {
+          // Idle
+          const pendingLeft = state.players.filter(p=>p.status==='pending').length;
+          card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div>'
+            + '<div class="empty-state-text">'+(pendingLeft?'Waiting for Admin to Spin':'Auction Complete! 🏆')+'</div>'
+            + '<div class="empty-state-sub">'+(pendingLeft?pendingLeft+' players remaining':'All players have been auctioned')+'</div></div>';
         }
       }
-      // Update auction log
+
+      // ── Auction log ──
       const logEl = document.getElementById('auctionLog');
       if (logEl && state.auction && state.auction.log && state.auction.log.length) {
         logEl.innerHTML = [...state.auction.log].reverse().map(e =>
           '<div class="log-entry"><span class="log-time">'+e.time+'</span>'+e.msg+'</div>'
         ).join('');
       }
-      // Update stats
       if (typeof updateAuctionStats === 'function') updateAuctionStats();
       applyViewerRestrictions();
       if (ping) {

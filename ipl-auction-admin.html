@@ -1641,24 +1641,39 @@ function spinRandom() {
   let spins=0, total=16+Math.floor(Math.random()*10);
   if (spinInterval) { clearInterval(spinInterval); spinInterval=null; }
 
+  // Signal spin start to viewer via Firebase
+  state.auction.spinning = true;
+  state.auction.spinName = null;
+  if (typeof broadcastState === 'function') broadcastState();
+
   spinInterval = setInterval(()=>{
     const r = pool[Math.floor(Math.random()*pool.length)];
-    sc.innerHTML = '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'+r.country+' \u00B7 '+r.role+'</div>'
+    sc.innerHTML = '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'+r.country+' · '+r.role+'</div>'
       + '<div class="spotlight-name spinning">'+r.name+'</div>'
       + '<div style="display:flex;gap:.6rem;justify-content:center;margin:.4rem 0;flex-wrap:wrap"><span class="badge '+rb(r.role)+'">'+r.role+'</span><span class="badge '+(r.country==='Indian'?'badge-indian':'badge-overseas')+'">'+r.country+'</span></div>'
-      + '<div style="font-family:Teko,sans-serif;font-size:1.5rem;color:var(--gold)">' + '\u20B9' + r.basePrice.toFixed(2)+' Cr</div>';
+      + '<div style="font-family:Teko,sans-serif;font-size:1.5rem;color:var(--gold)">₹'+r.basePrice.toFixed(2)+' Cr</div>';
+    // Every 3 ticks, push spin frame to Firebase so viewer mirrors it
     spins++;
+    if (spins % 3 === 0) {
+      state.auction.spinName = r.name;
+      state.auction.spinRole = r.role;
+      state.auction.spinCountry = r.country;
+      state.auction.spinBase = r.basePrice;
+      if (typeof broadcastState === 'function') broadcastState();
+    }
     if (spins>=total) {
       clearInterval(spinInterval); spinInterval=null;
+      state.auction.spinning = false; state.auction.spinName = null;
       // Pick a winner that is strictly pending — never sold
       const eligible = pool.filter(x=>x.status==='pending');
       if (!eligible.length) {
-        btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='\uD83C\uDFB2 SPIN';
+        btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='🎲 SPIN';
+        if (typeof broadcastState === 'function') broadcastState();
         sc.innerHTML='<div class="empty-state"><div class="empty-state-icon">🏁</div><div class="empty-state-text">No Pending Players</div><div class="empty-state-sub">All matching players have been sold or passed</div></div>';
         return;
       }
       const winner = eligible[Math.floor(Math.random()*eligible.length)];
-      btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='\uD83C\uDFB2 SPIN';
+      btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='🎲 SPIN';
       sc.classList.add('glow-border');
       setTimeout(()=>sc.classList.remove('glow-border'), 1500);
       startPlayerAuction(winner);
@@ -2057,6 +2072,7 @@ function setCustomBid() {
   state.auction.currentBid = newBid;
   input.value = '';
   renderSpotlight(p, true);
+  saveState(); // sync custom bid to Firebase
   toast(team.code+' custom bid ₹'+newBid.toFixed(2)+'Cr','info');
 }
 
