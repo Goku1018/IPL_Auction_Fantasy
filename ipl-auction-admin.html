@@ -1095,13 +1095,15 @@ window.state = loadState(); // single shared reference for all scripts
 let state = window.state;
 
 function saveState() {
+  // Sync window.state immediately for Firebase broadcast
+  window.state = state;
+  if (typeof broadcastState === 'function') broadcastState();
+  // Debounce localStorage write to avoid excessive I/O
   showSave('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    window.state = state; // keep module reference in sync
-    try { localStorage.setItem(SKEY, JSON.stringify(window.state)); showSave('saved'); }
+    try { localStorage.setItem(SKEY, JSON.stringify(state)); showSave('saved'); }
     catch(e) { showSave('error'); }
-    if (typeof broadcastState === 'function') broadcastState();
   }, 500);
 }
 
@@ -1833,6 +1835,7 @@ function selectBidder(teamId) {
   renderAuctionTeams();
   renderSpotlight(p, true);
   toast(team.code+' bids ₹'+state.auction.currentBid.toFixed(2)+'Cr','info');
+  saveState(); // sync bid to Firebase immediately
 }
 
 
@@ -2128,11 +2131,13 @@ function addLog(msg) {
   state.auction.log = state.auction.log||[];
   state.auction.log.push({time,msg});
   const el = document.getElementById('auctionLog');
-  if (!el) return;
-  const d = document.createElement('div');
-  d.className='log-entry';
-  d.innerHTML=`<span class="log-time">${time}</span>${msg}`;
-  el.prepend(d);
+  if (el) {
+    const d = document.createElement('div');
+    d.className='log-entry';
+    d.innerHTML=`<span class="log-time">${time}</span>${msg}`;
+    el.prepend(d);
+  }
+  saveState(); // sync log entry to Firebase
 }
 
 function resetAuction() {

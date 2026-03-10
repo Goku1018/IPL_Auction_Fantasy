@@ -637,6 +637,31 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 .pool-row:hover { border-color: rgba(255,215,0,0.3); background: rgba(255,215,0,0.04); }
 .pool-row .p-name { flex: 1; font-weight: 500; }
 
+/* ===== VIEWER AUCTION LAYOUT ===== */
+.viewer-auction-layout {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 1.5rem;
+  align-items: start;
+}
+.viewer-spotlight-col {
+  display: flex;
+  flex-direction: column;
+}
+.viewer-teams-col {
+  display: flex;
+  flex-direction: column;
+}
+.viewer-teams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: .75rem;
+}
+@media(max-width:1100px) {
+  .viewer-auction-layout { grid-template-columns: 1fr; }
+  .viewer-teams-grid { grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); }
+}
+
 /* ===== SPOTLIGHT / CENTER ===== */
 .spotlight-wrap { display: flex; flex-direction: column; gap: 1rem; }
 
@@ -644,9 +669,9 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
   background: rgba(13,17,32,0.75);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px; padding: 1.75rem;
+  border-radius: 16px; padding: 2.25rem 2rem;
   text-align: center; position: relative; overflow: hidden;
-  min-height: 340px; display: flex; flex-direction: column;
+  min-height: 420px; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
 }
 /* Animated team-color glow ring */
@@ -670,7 +695,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 .player-spotlight > * { position: relative; z-index: 1; }
 
 .spotlight-name {
-  font-family: 'Teko', sans-serif; font-size: 2.7rem; font-weight: 700;
+  font-family: 'Teko', sans-serif; font-size: 3.4rem; font-weight: 700;
   letter-spacing: 2px; line-height: 1.1; margin-bottom: .4rem;
   background: linear-gradient(135deg, #fff 40%, var(--gold));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
@@ -690,7 +715,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
   margin: .7rem 0; text-align: center; width: 100%;
 }
 .bid-amount {
-  font-family: 'Teko', sans-serif; font-size: 2.6rem; font-weight: 700;
+  font-family: 'Teko', sans-serif; font-size: 3.2rem; font-weight: 700;
   background: linear-gradient(135deg, var(--gold), var(--orange));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   letter-spacing: 2px;
@@ -852,10 +877,11 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
     </div>
     <div class="progress-bar" style="margin-bottom:1.25rem"><div class="progress-fill" id="aProgressBar" style="width:0%"></div></div>
 
-    <!-- Spotlight centered -->
-    <div style="display:flex;justify-content:center;margin-bottom:1.5rem;">
-      <div class="spotlight-wrap" style="width:100%;max-width:580px;">
-        <!-- Spotlight card -->
+    <!-- 2-column: spotlight+log LEFT, teams RIGHT -->
+    <div class="viewer-auction-layout">
+
+      <!-- LEFT: Spotlight + Log -->
+      <div class="viewer-spotlight-col">
         <div class="player-spotlight" id="spotlightCard">
           <div class="empty-state">
             <div class="empty-state-icon">🎲</div>
@@ -863,18 +889,24 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
             <div class="empty-state-sub">Admin will spin the next player</div>
           </div>
         </div>
-        <!-- Auction log -->
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header" style="margin-bottom:.75rem;padding-bottom:.6rem"><div class="card-icon" style="font-size:.9rem">📜</div><div class="card-title" style="font-size:1rem">Log</div></div>
-          <div class="auction-log" id="auctionLog"><div style="text-align:center;padding:.75rem;color:var(--text-dim);font-size:.8rem">Auction log appears here…</div></div>
+        <!-- Auction log below spotlight -->
+        <div class="card" style="margin-bottom:0;margin-top:1rem;">
+          <div class="card-header" style="margin-bottom:.75rem;padding-bottom:.6rem">
+            <div class="card-icon" style="font-size:.9rem">📜</div>
+            <div class="card-title" style="font-size:1rem">Auction Log</div>
+          </div>
+          <div class="auction-log" id="auctionLog">
+            <div style="text-align:center;padding:.75rem;color:var(--text-dim);font-size:.8rem">Auction log appears here…</div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Teams grid below -->
-    <div>
-      <div class="panel-title" style="margin-bottom:1rem;">🏟️ Bidding Teams</div>
-      <div id="auctionTeamsList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;"></div>
+      <!-- RIGHT: Bidding Teams (2 per row) -->
+      <div class="viewer-teams-col">
+        <div class="panel-title" style="margin-bottom:.85rem;">🏟️ Bidding Teams</div>
+        <div id="auctionTeamsList" class="viewer-teams-grid"></div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -2171,7 +2203,27 @@ try {
       state = window.state; // sync local reference
       updatePlayerUI(); updateMatchCount();
       renderPlayerTable(); renderResults();
+      // Update auction room if visible
       if (document.getElementById('auctionTeamsList')) renderAuctionTeams();
+      // Update spotlight with current player
+      if (state.auction && state.auction.currentPlayer && state.auction.inProgress) {
+        if (typeof renderSpotlight === 'function') renderSpotlight(state.auction.currentPlayer, true);
+      } else if (state.auction && !state.auction.inProgress) {
+        const pendingLeft = state.players.filter(p=>p.status==='pending').length;
+        const card = document.getElementById('spotlightCard');
+        if (card && !state.auction.currentPlayer) {
+          card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div><div class="empty-state-text">'+(pendingLeft?'Waiting for next spin':'Auction Complete! 🏆')+'</div><div class="empty-state-sub">'+(pendingLeft?pendingLeft+' players remaining':'All players auctioned')+'</div></div>';
+        }
+      }
+      // Update auction log
+      const logEl = document.getElementById('auctionLog');
+      if (logEl && state.auction && state.auction.log && state.auction.log.length) {
+        logEl.innerHTML = [...state.auction.log].reverse().map(e =>
+          '<div class="log-entry"><span class="log-time">'+e.time+'</span>'+e.msg+'</div>'
+        ).join('');
+      }
+      // Update stats
+      if (typeof updateAuctionStats === 'function') updateAuctionStats();
       applyViewerRestrictions();
       if (ping) {
         ping.style.opacity = '1';
