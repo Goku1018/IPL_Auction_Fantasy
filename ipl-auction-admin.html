@@ -1660,7 +1660,7 @@ function spinRandom() {
     spins++;
     if (spins>=total) {
       clearInterval(spinInterval); spinInterval=null;
-      const eligible = pool.filter(x=>x.status==='pending');
+      const eligible = pool; // already filtered by rand.statuses via getPool()
       if (!eligible.length) {
         btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='🎲 SPIN';
         state.auction.spinning = false;
@@ -1735,7 +1735,7 @@ function browseStartAuction(id) {
     const soldTeam = state.teams.find(t=>t.players.some(tp=>tp.id===player.id));
     return toast(player.name+' already SOLD'+(soldTeam?' to '+soldTeam.name:'')+'.','error');
   }
-  if (player.status !== 'pending') return toast(player.name+' is '+player.status+' — not available.','info');
+  if (player.status === 'sold') return toast(player.name+' is already sold — not available.','info');
   startPlayerAuction(player);
 }
 
@@ -1929,6 +1929,53 @@ function checkBidFeasibility(team, currentPlayer, bidAmt) {
     totalRoleShortfall += short;
   }
   const minFillSlots = Math.max(slotsNeeded, totalRoleShortfall);
+
+  // ── 6b. Role-minimum reachability check ──────────────────────────────
+  // After buying this player, the team still has roleShortfall[role] slots to fill per role.
+  // Block the bid if the remaining squad capacity cannot accommodate all role minimums,
+  // OR if buying a non-required-role player now would leave too few slots for required roles.
+  {
+    const slotsAfter = con.maxSquad - squadSize; // slots still open after this purchase
+    // If ANY role shortfall exists and the current player doesn't help that role,
+    // check that there are enough remaining slots to still satisfy all shortfalls.
+    if (totalRoleShortfall > 0) {
+      // Does this purchase contribute to a role shortfall?
+      const helpsShortfall = (roleShortfall[currentPlayer.role] || 0) > 0;
+      if (!helpsShortfall) {
+        // Buying a non-required role: the remaining slots must still cover all shortfalls
+        // AND there must be enough players of each required role still available.
+        const availablePendingNow = state.players.filter(p =>
+          p.status === 'pending' && p.id !== currentPlayer.id
+        );
+        const requiredRoles = Object.entries(roleShortfall).filter(([,v]) => v > 0);
+        for (const [role, needed] of requiredRoles) {
+          const availableForRole = availablePendingNow.filter(p => p.role === role).length;
+          if (availableForRole < needed) {
+            errors.push(
+              'Cannot buy this player — ' + team.code + ' still needs ' + needed +
+              ' more ' + role + (needed > 1 ? 's' : '') +
+              ' to meet the minimum, but only ' + availableForRole +
+              ' pending ' + role + (availableForRole !== 1 ? 's' : '') + ' remain!'
+            );
+            return { ok: false, warnings, errors };
+          }
+        }
+        // After this non-required purchase, do we still have enough slots for all shortfalls?
+        if (slotsAfter < totalRoleShortfall) {
+          const needed = Object.entries(roleShortfall)
+            .filter(([,v]) => v > 0)
+            .map(([r,v]) => v + ' ' + r + (v > 1 ? 's' : ''))
+            .join(', ');
+          errors.push(
+            'Cannot buy this player — ' + team.code + ' must still sign ' + needed +
+            ' to meet role minimums, and this purchase would leave only ' + slotsAfter +
+            ' squad slot' + (slotsAfter !== 1 ? 's' : '') + ' for ' + totalRoleShortfall + ' required roles.'
+          );
+          return { ok: false, warnings, errors };
+        }
+      }
+    }
+  }
 
   if (minFillSlots > 0) {
     // For each required slot, find the cheapest available pending player that fits.
@@ -2131,6 +2178,9 @@ function sellPlayer() {
   // Final feasibility gate — enforce hard errors, pass through warnings
   if (!enforceFeasibility(team, p, state.auction.currentBid)) return;
   saveSnapshot('Sold '+p.name+' → '+team.name);
+  // Always update the canonical player object in state.players (not just the currentPlayer reference)
+  const livePlayer = state.players.find(x=>x.id===p.id) || p;
+  livePlayer.status='sold'; livePlayer.soldTo=team.name; livePlayer.soldPrice=state.auction.currentBid;
   p.status='sold'; p.soldTo=team.name; p.soldPrice=state.auction.currentBid;
   team.players.push({id:p.id,price:state.auction.currentBid});
   team.budget = parseFloat((team.budget-state.auction.currentBid).toFixed(2));
