@@ -2057,6 +2057,9 @@ function undoLastMove() {
   }
 
   document.getElementById('btnUndo').style.display = 'none';
+  // Reset status filter so restored player state is always visible
+  const sfUndo = document.getElementById('filterStatus');
+  if (sfUndo) sfUndo.value = '';
   renderPlayerTable(); renderTeams(); renderAuctionTeams();
   updateAuctionStats(); saveState();
   toast('↺ Undone: ' + snap.label, 'info');
@@ -2157,6 +2160,9 @@ function endPlayer() {
   document.getElementById('btnUnsold').style.display='none';
   const pendingLeft = state.players.filter(p=>p.status==='pending').length;
   document.getElementById('spotlightCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">${pendingLeft?'🎲':'🏆'}</div><div class="empty-state-text">${pendingLeft?'Spin for Next Player':'Auction Complete! 🏆'}</div><div class="empty-state-sub">${pendingLeft?pendingLeft+' players remaining — hit Spin':'All players have been auctioned'}</div></div>`;
+  // Reset status filter so the newly sold/unsold player is always visible
+  const sf = document.getElementById('filterStatus');
+  if (sf) sf.value = '';
   renderPlayerTable(); renderTeams(); renderAuctionTeams();
   updateAuctionStats();
   saveState();

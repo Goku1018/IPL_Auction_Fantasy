@@ -2456,6 +2456,9 @@ try {
           if (au.currentPlayer && au.inProgress) {
             if (typeof renderSpotlight === 'function') renderSpotlight(au.currentPlayer, true);
           } else {
+            // Reset status filter so sold/unsold player is always visible after sell
+            const sfV = document.getElementById('filterStatus');
+            if (sfV) sfV.value = '';
             const pendingLeft = state.players.filter(p=>p.status==='pending').length;
             card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div>'
               + '<div class="empty-state-text">'+(pendingLeft?'Waiting for Admin to Spin':'Auction Complete! 🏆')+'</div>'
