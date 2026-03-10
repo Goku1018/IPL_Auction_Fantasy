@@ -1527,7 +1527,7 @@ function renderPlayerTable() {
   });
   if (!filtered.length) { container.innerHTML='<div class="empty-state" style="padding:2rem"><div class="empty-state-icon">📋</div><div class="empty-state-text">No Players</div></div>'; return; }
   const roles = ['Batsman','Bowler','All-Rounder','Wicket-Keeper'];
-  container.innerHTML = `<table><thead><tr><th>#</th><th>Name</th><th>Franchise</th><th>Role</th><th>Country</th><th>Base (₹Cr)</th><th>Status</th><th>Team</th><th>Sold</th><th style="text-align:center">Edit</th></tr></thead><tbody>
+  container.innerHTML = `<table><thead><tr><th>#</th><th>Name</th><th>Franchise</th><th>Role</th><th>Country</th><th>Base (₹Cr)</th><th>Status</th><th>Team</th><th>Sold</th></tr></thead><tbody>
     ${filtered.map(p=>`<tr id="prow-${p.id}">
       <td style="color:var(--text-dim)">${p.id}</td>
       <td style="font-weight:500">${p.name}</td>
@@ -1538,10 +1538,7 @@ function renderPlayerTable() {
       <td><span class="badge badge-${p.status}">${p.status}</span></td>
       <td style="color:var(--cyan)">${p.soldTo||'—'}</td>
       <td style="color:var(--gold)">${p.soldPrice?'₹'+p.soldPrice.toFixed(2)+'Cr':'—'}</td>
-      <td style="text-align:center;white-space:nowrap">
-        <button class="btn btn-sm" style="padding:.18rem .5rem;font-size:.7rem;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);color:var(--gold);border-radius:5px;cursor:pointer" onclick="startEditPlayer(${p.id})">✏️</button>
-        <button class="btn btn-sm" style="padding:.18rem .5rem;font-size:.7rem;background:rgba(255,60,60,0.1);border:1px solid rgba(255,60,60,0.3);color:#ff6b6b;border-radius:5px;cursor:pointer;margin-left:.25rem" onclick="deletePlayer(${p.id})">🗑️</button>
-      </td>
+
     </tr>`).join('')}
   </tbody></table>`;
 }
