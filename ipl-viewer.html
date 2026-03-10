@@ -2467,7 +2467,14 @@ try {
         }
       }
       // ── Popup notifications ──
-      if (au.notification) showViewerPopup(au.notification);
+      if (au.notification) {
+        if (_lastNotifTs === 0) {
+          // First load — silently mark as seen so stale notification doesn't show
+          _lastNotifTs = au.notification.ts;
+        } else {
+          showViewerPopup(au.notification);
+        }
+      }
 
       // ── Auction log ──
       const logEl = document.getElementById('auctionLog');
