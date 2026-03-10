@@ -1808,7 +1808,7 @@ function renderBrowse() {
       <span class="p-name">${p.name}</span>
       ${p.franchise?`<span style="font-size:.65rem;color:var(--gold);opacity:.75;font-family:'Barlow Condensed',sans-serif">${p.franchise}</span>`:''}
       <span style="color:var(--gold);font-size:.78rem;margin-right:.3rem">₹${p.basePrice.toFixed(2)}</span>
-      <button class="btn btn-gold btn-sm" onclick="browseStartAuction(${p.id})" ${p.status!=='pending'?'disabled style="opacity:.4"':''}>▶ Bid</button>
+      <button class="btn btn-gold btn-sm" onclick="browseStartAuction(${p.id})" ${p.status==='sold'?'disabled style="opacity:.4"':''}>▶ Bid</button>
     </div>`;
   }).join('');
 }
