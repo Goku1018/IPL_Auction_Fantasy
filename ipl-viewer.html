@@ -533,6 +533,51 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 
 /* ===== TOAST ===== */
 #toastContainer { position: fixed; bottom: 2rem; right: 2rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
+/* ===== VIEWER POPUP MODAL ===== */
+.viewer-popup-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+  animation: popOverlayIn .25s ease;
+}
+@keyframes popOverlayIn { from{opacity:0} to{opacity:1} }
+.viewer-popup {
+  background: var(--card, #0d1120);
+  border-radius: 20px; padding: 2.5rem 2.25rem;
+  text-align: center; max-width: 480px; width: 90%;
+  position: relative; overflow: hidden;
+  animation: popCardIn .35s cubic-bezier(.22,1,.36,1);
+}
+@keyframes popCardIn { from{transform:scale(.7) translateY(40px);opacity:0} to{transform:scale(1) translateY(0);opacity:1} }
+.viewer-popup-sold { border: 2px solid rgba(0,230,118,0.5); box-shadow: 0 0 60px rgba(0,230,118,0.25); }
+.viewer-popup-unsold { border: 2px solid rgba(255,71,87,0.4); box-shadow: 0 0 40px rgba(255,71,87,0.2); }
+.viewer-popup-warning { border: 2px solid rgba(255,140,0,0.5); box-shadow: 0 0 40px rgba(255,140,0,0.25); }
+.viewer-popup-icon { font-size: 3.5rem; margin-bottom: .75rem; }
+.viewer-popup-label {
+  font-size: .65rem; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: .35rem;
+}
+.viewer-popup-name {
+  font-family: 'Teko', sans-serif; font-size: 3rem; font-weight: 700;
+  letter-spacing: 2px; line-height: 1.1; margin-bottom: .5rem;
+}
+.viewer-popup-sub { font-size: 1rem; color: var(--text-dim); margin-bottom: .25rem; }
+.viewer-popup-price {
+  font-family: 'Teko', sans-serif; font-size: 2.2rem; font-weight: 700;
+  background: linear-gradient(135deg, var(--gold), var(--orange));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin: .5rem 0;
+}
+.viewer-popup-team {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.3rem;
+  padding: .35rem 1rem; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  margin-top: .5rem;
+}
+.viewer-popup-confetti { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+
+/* ===== TOAST ===== */
 .toast {
   padding: .75rem 1.3rem; border-radius: 10px; font-size: .84rem; font-weight: 500;
   animation: toastIn .3s cubic-bezier(.22,1,.36,1), toastOut .4s ease var(--toast-delay, 2.8s) forwards;
@@ -545,6 +590,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 .toast-warning { background: rgba(255,140,0,0.18);  border: 1px solid rgba(255,140,0,0.5);  color: #FFB347; box-shadow: 0 4px 20px rgba(255,140,0,0.2); }
 @keyframes toastIn  { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
 @keyframes toastOut { to{opacity:0;transform:translateY(8px)} }
+@keyframes confettiFall { 0%{transform:translateY(0) rotate(0deg);opacity:1} 100%{transform:translateY(320px) rotate(720deg);opacity:0} }
 
 /* ===== ANIMATIONS ===== */
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
@@ -1002,6 +1048,83 @@ function toast(msg, type='info') {
   }
   document.getElementById('toastContainer').appendChild(t);
   setTimeout(() => t.remove(), duration + 500);
+}
+
+// ===================== VIEWER POPUP =====================
+let _popupTimer = null;
+let _lastNotifTs = 0;
+
+function showViewerPopup(notif) {
+  if (!notif || notif.ts === _lastNotifTs) return;
+  _lastNotifTs = notif.ts;
+
+  // Remove any existing popup
+  const existing = document.getElementById('viewerPopupOverlay');
+  if (existing) existing.remove();
+  clearTimeout(_popupTimer);
+
+  const overlay = document.createElement('div');
+  overlay.id = 'viewerPopupOverlay';
+  overlay.className = 'viewer-popup-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  let inner = '';
+  if (notif.type === 'sold') {
+    const tc = notif.teamColor || '#FFD700';
+    inner = `
+      <div class="viewer-popup viewer-popup-sold">
+        <div class="viewer-popup-confetti" id="popupConfetti"></div>
+        <div class="viewer-popup-icon">🏏</div>
+        <div class="viewer-popup-label">SOLD</div>
+        <div class="viewer-popup-name" style="background:linear-gradient(135deg,#fff 40%,var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent">${notif.player}</div>
+        <div class="viewer-popup-price">₹${notif.price.toFixed(2)} Cr</div>
+        <div class="viewer-popup-team" style="color:${tc};border-color:${tc}40;background:${tc}18">
+          <span>🏟️</span><span>${notif.team}</span>
+        </div>
+      </div>`;
+    // Auto-close after 5s
+    _popupTimer = setTimeout(() => overlay.remove(), 5000);
+  } else if (notif.type === 'unsold') {
+    inner = `
+      <div class="viewer-popup viewer-popup-unsold">
+        <div class="viewer-popup-icon">❌</div>
+        <div class="viewer-popup-label">UNSOLD</div>
+        <div class="viewer-popup-name" style="color:var(--danger)">${notif.player}</div>
+        <div class="viewer-popup-sub">Base price: ₹${notif.price.toFixed(2)} Cr</div>
+        <div style="font-size:.75rem;color:var(--text-dim);margin-top:.75rem">No bids placed</div>
+      </div>`;
+    _popupTimer = setTimeout(() => overlay.remove(), 3500);
+  } else if (notif.type === 'warning') {
+    inner = `
+      <div class="viewer-popup viewer-popup-warning">
+        <div class="viewer-popup-icon">⚠️</div>
+        <div class="viewer-popup-label">AUCTION WARNING</div>
+        <div style="font-size:1.1rem;color:#FFB347;margin:.5rem 0;line-height:1.4">${notif.msg}</div>
+      </div>`;
+    _popupTimer = setTimeout(() => overlay.remove(), 4000);
+  }
+
+  overlay.innerHTML = inner;
+  document.body.appendChild(overlay);
+
+  // Confetti for SOLD
+  if (notif.type === 'sold') {
+    const canvas = document.getElementById('popupConfetti');
+    if (canvas) spawnConfetti(canvas);
+  }
+}
+
+function spawnConfetti(container) {
+  const colors = ['#FFD700','#00E676','#FF6B1A','#00BFFF','#FF4757','#7BFF82'];
+  for (let i = 0; i < 38; i++) {
+    const dot = document.createElement('div');
+    const size = 6 + Math.random() * 8;
+    dot.style.cssText = `position:absolute;width:${size}px;height:${size}px;border-radius:${Math.random()>.5?'50%':'2px'};
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      left:${Math.random()*100}%;top:-10px;opacity:1;
+      animation:confettiFall ${1.5+Math.random()*1.5}s ease-in ${Math.random()*.6}s forwards`;
+    container.appendChild(dot);
+  }
 }
 
 // ===================== TAB =====================
@@ -2195,6 +2318,37 @@ try {
   if (ping) { ping.style.opacity = '0.5'; ping.textContent = '⏳ Connecting...'; }
 
   // Listen for live state from admin
+  // ── Local spin vars (viewer runs its own animation) ──
+  let _viewerSpinInterval = null;
+  let _isSpinning = false;
+
+  function startViewerSpin() {
+    if (_viewerSpinInterval) return; // already running
+    _isSpinning = true;
+    const card = document.getElementById('spotlightCard');
+    const pool = state.players.filter(p => p.status === 'pending');
+    if (!pool.length || !card) return;
+    let frame = 0;
+    const roleBadge = {'Batsman':'badge-bat','Bowler':'badge-bowl','All-Rounder':'badge-ar','Wicket-Keeper':'badge-wk'};
+    _viewerSpinInterval = setInterval(() => {
+      const r = pool[Math.floor(Math.random() * pool.length)];
+      card.innerHTML =
+        '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'
+          + r.country + ' · ' + r.role + '</div>'
+        + '<div class="spotlight-name spinning">' + r.name + '</div>'
+        + '<div style="display:flex;gap:.6rem;justify-content:center;margin:.4rem 0;flex-wrap:wrap">'
+        +   '<span class="badge ' + (roleBadge[r.role]||'') + '">' + r.role + '</span>'
+        +   '<span class="badge ' + (r.country==='Indian'?'badge-indian':'badge-overseas') + '">' + r.country + '</span>'
+        + '</div>'
+        + '<div style="font-family:Teko,sans-serif;font-size:1.8rem;color:var(--gold)">₹' + r.basePrice.toFixed(2) + ' Cr</div>';
+    }, 90);
+  }
+
+  function stopViewerSpin() {
+    if (_viewerSpinInterval) { clearInterval(_viewerSpinInterval); _viewerSpinInterval = null; }
+    _isSpinning = false;
+  }
+
   onValue(dbRef, (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.payload) return;
@@ -2205,34 +2359,28 @@ try {
       renderPlayerTable(); renderResults();
       if (document.getElementById('auctionTeamsList')) renderAuctionTeams();
 
-      // ── Spotlight: spin animation / current player / idle ──
-      const card = document.getElementById('spotlightCard');
-      if (card) {
-        const au = state.auction || {};
-        if (au.spinning && au.spinName) {
-          // Mirror spin animation from admin
-          const roleBadge = {'Batsman':'badge-bat','Bowler':'badge-bowl','All-Rounder':'badge-ar','Wicket-Keeper':'badge-wk'};
-          card.innerHTML =
-            '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'
-              + (au.spinCountry||'') + ' · ' + (au.spinRole||'') +
-            '</div>'
-            + '<div class="spotlight-name spinning">' + au.spinName + '</div>'
-            + '<div style="display:flex;gap:.6rem;justify-content:center;margin:.4rem 0;flex-wrap:wrap">'
-            +   '<span class="badge '+(roleBadge[au.spinRole]||'')+'">'+(au.spinRole||'')+'</span>'
-            +   '<span class="badge '+(au.spinCountry==='Indian'?'badge-indian':'badge-overseas')+'">'+(au.spinCountry||'')+'</span>'
-            + '</div>'
-            + '<div style="font-family:Teko,sans-serif;font-size:1.8rem;color:var(--gold)">₹'+(au.spinBase||0).toFixed(2)+' Cr</div>';
-        } else if (au.currentPlayer && au.inProgress) {
-          // Player locked in — show spotlight with live bid
-          if (typeof renderSpotlight === 'function') renderSpotlight(au.currentPlayer, true);
-        } else {
-          // Idle
-          const pendingLeft = state.players.filter(p=>p.status==='pending').length;
-          card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div>'
-            + '<div class="empty-state-text">'+(pendingLeft?'Waiting for Admin to Spin':'Auction Complete! 🏆')+'</div>'
-            + '<div class="empty-state-sub">'+(pendingLeft?pendingLeft+' players remaining':'All players have been auctioned')+'</div></div>';
+      // ── Spotlight: local spin / current player / idle ──
+      const au = state.auction || {};
+      if (au.spinning) {
+        // Spin is active — run local animation (smooth, no Firebase lag)
+        if (!_isSpinning) startViewerSpin();
+      } else {
+        // Spin ended — stop local animation
+        if (_isSpinning) stopViewerSpin();
+        const card = document.getElementById('spotlightCard');
+        if (card) {
+          if (au.currentPlayer && au.inProgress) {
+            if (typeof renderSpotlight === 'function') renderSpotlight(au.currentPlayer, true);
+          } else {
+            const pendingLeft = state.players.filter(p=>p.status==='pending').length;
+            card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">'+(pendingLeft?'🎲':'🏆')+'</div>'
+              + '<div class="empty-state-text">'+(pendingLeft?'Waiting for Admin to Spin':'Auction Complete! 🏆')+'</div>'
+              + '<div class="empty-state-sub">'+(pendingLeft?pendingLeft+' players remaining':'All players have been auctioned')+'</div></div>';
+          }
         }
       }
+      // ── Popup notifications ──
+      if (au.notification) showViewerPopup(au.notification);
 
       // ── Auction log ──
       const logEl = document.getElementById('auctionLog');

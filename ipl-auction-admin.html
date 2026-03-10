@@ -1646,28 +1646,24 @@ function spinRandom() {
   state.auction.spinName = null;
   if (typeof broadcastState === 'function') broadcastState();
 
+  // Tell viewer: spin is starting (no per-frame spam needed)
+  state.auction.spinning = true;
+  state.auction.notification = null; // clear any old notification
+  if (typeof broadcastState === 'function') broadcastState();
+
   spinInterval = setInterval(()=>{
     const r = pool[Math.floor(Math.random()*pool.length)];
     sc.innerHTML = '<div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">'+r.country+' · '+r.role+'</div>'
       + '<div class="spotlight-name spinning">'+r.name+'</div>'
       + '<div style="display:flex;gap:.6rem;justify-content:center;margin:.4rem 0;flex-wrap:wrap"><span class="badge '+rb(r.role)+'">'+r.role+'</span><span class="badge '+(r.country==='Indian'?'badge-indian':'badge-overseas')+'">'+r.country+'</span></div>'
       + '<div style="font-family:Teko,sans-serif;font-size:1.5rem;color:var(--gold)">₹'+r.basePrice.toFixed(2)+' Cr</div>';
-    // Every 3 ticks, push spin frame to Firebase so viewer mirrors it
     spins++;
-    if (spins % 3 === 0) {
-      state.auction.spinName = r.name;
-      state.auction.spinRole = r.role;
-      state.auction.spinCountry = r.country;
-      state.auction.spinBase = r.basePrice;
-      if (typeof broadcastState === 'function') broadcastState();
-    }
     if (spins>=total) {
       clearInterval(spinInterval); spinInterval=null;
-      state.auction.spinning = false; state.auction.spinName = null;
-      // Pick a winner that is strictly pending — never sold
       const eligible = pool.filter(x=>x.status==='pending');
       if (!eligible.length) {
         btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='🎲 SPIN';
+        state.auction.spinning = false;
         if (typeof broadcastState === 'function') broadcastState();
         sc.innerHTML='<div class="empty-state"><div class="empty-state-icon">🏁</div><div class="empty-state-text">No Pending Players</div><div class="empty-state-sub">All matching players have been sold or passed</div></div>';
         return;
@@ -1676,7 +1672,9 @@ function spinRandom() {
       btn.disabled=false; btn.classList.remove('pulsing'); btn.textContent='🎲 SPIN';
       sc.classList.add('glow-border');
       setTimeout(()=>sc.classList.remove('glow-border'), 1500);
-      startPlayerAuction(winner);
+      // Signal spin end — viewer will stop local animation and show winner
+      state.auction.spinning = false;
+      startPlayerAuction(winner);  // this calls saveState which broadcasts
     }
   }, 85);
 }
@@ -1995,6 +1993,9 @@ function enforceFeasibility(team, player, bidAmt, blockOnError = true) {
   }
   if (result.warnings.length) {
     result.warnings.forEach(w => toast('⚠️ ' + w, 'warning'));
+    // Push first warning to viewer
+    state.auction.notification = { type:'warning', msg: result.warnings[0], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
   }
   return true;
 }
@@ -2103,6 +2104,7 @@ function sellPlayer() {
   team.budget = parseFloat((team.budget-state.auction.currentBid).toFixed(2));
   addLog('✅ '+p.name+' → '+team.name+' ₹'+state.auction.currentBid.toFixed(2)+'Cr');
   toast(p.name+' SOLD to '+team.name+'!','success');
+  state.auction.notification = { type:'sold', player:p.name, team:team.name, teamColor:team.color, price:state.auction.currentBid, ts:Date.now() };
   endPlayer();
 }
 
@@ -2113,6 +2115,7 @@ function unsoldPlayer() {
   p.status='unsold';
   addLog('❌ '+p.name+' UNSOLD (₹'+p.basePrice.toFixed(2)+'Cr)');
   toast(p.name+' unsold','info');
+  state.auction.notification = { type:'unsold', player:p.name, price:p.basePrice, ts:Date.now() };
   endPlayer();
 }
 
