@@ -552,6 +552,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 .viewer-popup-sold { border: 2px solid rgba(0,230,118,0.5); box-shadow: 0 0 60px rgba(0,230,118,0.25); }
 .viewer-popup-unsold { border: 2px solid rgba(255,71,87,0.4); box-shadow: 0 0 40px rgba(255,71,87,0.2); }
 .viewer-popup-warning { border: 2px solid rgba(255,140,0,0.5); box-shadow: 0 0 40px rgba(255,140,0,0.25); }
+.viewer-popup-error   { border: 2px solid rgba(255,71,87,0.5);  box-shadow: 0 0 40px rgba(255,71,87,0.25); }
 .viewer-popup-icon { font-size: 3.5rem; margin-bottom: .75rem; }
 .viewer-popup-label {
   font-size: .65rem; letter-spacing: 3px; text-transform: uppercase;
@@ -1058,7 +1059,6 @@ function showViewerPopup(notif) {
   if (!notif || notif.ts === _lastNotifTs) return;
   _lastNotifTs = notif.ts;
 
-  // Remove any existing popup
   const existing = document.getElementById('viewerPopupOverlay');
   if (existing) existing.remove();
   clearTimeout(_popupTimer);
@@ -1067,6 +1067,9 @@ function showViewerPopup(notif) {
   overlay.id = 'viewerPopupOverlay';
   overlay.className = 'viewer-popup-overlay';
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  // Normalise: support both old single-msg and new msgs-array
+  const msgs = notif.msgs || (notif.msg ? [notif.msg] : []);
 
   let inner = '';
   if (notif.type === 'sold') {
@@ -1082,8 +1085,8 @@ function showViewerPopup(notif) {
           <span>🏟️</span><span>${notif.team}</span>
         </div>
       </div>`;
-    // Auto-close after 5s
     _popupTimer = setTimeout(() => overlay.remove(), 5000);
+
   } else if (notif.type === 'unsold') {
     inner = `
       <div class="viewer-popup viewer-popup-unsold">
@@ -1094,20 +1097,37 @@ function showViewerPopup(notif) {
         <div style="font-size:.75rem;color:var(--text-dim);margin-top:.75rem">No bids placed</div>
       </div>`;
     _popupTimer = setTimeout(() => overlay.remove(), 3500);
+
   } else if (notif.type === 'warning') {
+    const msgHtml = msgs.map(m =>
+      '<div style="font-size:1rem;color:#FFB347;margin:.35rem 0;line-height:1.5;text-align:left;padding:.5rem .75rem;background:rgba(255,140,0,0.08);border-left:3px solid #FFB347;border-radius:4px">⚠️ ' + m + '</div>'
+    ).join('');
     inner = `
       <div class="viewer-popup viewer-popup-warning">
         <div class="viewer-popup-icon">⚠️</div>
         <div class="viewer-popup-label">AUCTION WARNING</div>
-        <div style="font-size:1.1rem;color:#FFB347;margin:.5rem 0;line-height:1.4">${notif.msg}</div>
+        <div style="width:100%;margin:.5rem 0">${msgHtml}</div>
+        <div style="font-size:.72rem;color:var(--text-dim);margin-top:.75rem">Tap anywhere to dismiss</div>
       </div>`;
-    _popupTimer = setTimeout(() => overlay.remove(), 4000);
+    _popupTimer = setTimeout(() => overlay.remove(), 6000);
+
+  } else if (notif.type === 'error') {
+    const msgHtml = msgs.map(m =>
+      '<div style="font-size:1rem;color:var(--danger);margin:.35rem 0;line-height:1.5;text-align:left;padding:.5rem .75rem;background:rgba(255,71,87,0.08);border-left:3px solid var(--danger);border-radius:4px">🚫 ' + m + '</div>'
+    ).join('');
+    inner = `
+      <div class="viewer-popup viewer-popup-error">
+        <div class="viewer-popup-icon">🚫</div>
+        <div class="viewer-popup-label">BID BLOCKED</div>
+        <div style="width:100%;margin:.5rem 0">${msgHtml}</div>
+        <div style="font-size:.72rem;color:var(--text-dim);margin-top:.75rem">Tap anywhere to dismiss</div>
+      </div>`;
+    _popupTimer = setTimeout(() => overlay.remove(), 6000);
   }
 
   overlay.innerHTML = inner;
   document.body.appendChild(overlay);
 
-  // Confetti for SOLD
   if (notif.type === 'sold') {
     const canvas = document.getElementById('popupConfetti');
     if (canvas) spawnConfetti(canvas);

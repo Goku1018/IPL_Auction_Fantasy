@@ -1835,8 +1835,20 @@ function selectBidder(teamId) {
   const p = state.auction.currentPlayer;
   if (!team||!p) return;
   const os = team.players.filter(tp=>{ const pl=state.players.find(x=>x.id===tp.id); return pl&&pl.country==='Overseas'; }).length;
-  if (p.country==='Overseas'&&os>=state.constraints.maxOverseas) return toast(team.code+' reached overseas cap','error');
-  if (team.budget<p.basePrice) return toast(team.code+' cannot afford this player','error');
+  if (p.country==='Overseas'&&os>=state.constraints.maxOverseas) {
+    const msg = team.code+' has reached the overseas player cap ('+state.constraints.maxOverseas+')';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
+  if (team.budget<p.basePrice) {
+    const msg = team.code+' cannot afford this player — insufficient budget (₹'+team.budget.toFixed(2)+'Cr remaining)';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
   // First bid on a player stays at base price; subsequent bids raise by one increment
   const isFirstBid = (state.auction.currentBidder === null);
   const inc = isFirstBid ? 0 : getIncrement(state.auction.currentBid);
@@ -1989,12 +2001,17 @@ function enforceFeasibility(team, player, bidAmt, blockOnError = true) {
   const result = checkBidFeasibility(team, player, bidAmt);
   if (!result.ok && blockOnError) {
     result.errors.forEach(e => toast('🚫 ' + e, 'error'));
+    // Push ALL errors to viewer
+    if (result.errors.length) {
+      state.auction.notification = { type:'error', msgs: result.errors, ts:Date.now() };
+      if (typeof broadcastState === 'function') broadcastState();
+    }
     return false;
   }
   if (result.warnings.length) {
     result.warnings.forEach(w => toast('⚠️ ' + w, 'warning'));
-    // Push first warning to viewer
-    state.auction.notification = { type:'warning', msg: result.warnings[0], ts:Date.now() };
+    // Push ALL warnings to viewer
+    state.auction.notification = { type:'warning', msgs: result.warnings, ts:Date.now() };
     if (typeof broadcastState === 'function') broadcastState();
   }
   return true;
@@ -2094,8 +2111,20 @@ function sellPlayer() {
   }
   const team = state.teams.find(t=>t.id===state.auction.currentBidder);
   if (!team) return;
-  if (team.budget<state.auction.currentBid) return toast(team.code+' insufficient budget!','error');
-  if (team.players.length>=state.constraints.maxSquad) return toast(team.code+' squad full!','error');
+  if (team.budget<state.auction.currentBid) {
+    const msg = team.code+' has insufficient budget! Needs ₹'+state.auction.currentBid.toFixed(2)+'Cr, has ₹'+team.budget.toFixed(2)+'Cr';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
+  if (team.players.length>=state.constraints.maxSquad) {
+    const msg = team.code+' squad is full ('+state.constraints.maxSquad+' players max)';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
   // Final feasibility gate — enforce hard errors, pass through warnings
   if (!enforceFeasibility(team, p, state.auction.currentBid)) return;
   saveSnapshot('Sold '+p.name+' → '+team.name);
