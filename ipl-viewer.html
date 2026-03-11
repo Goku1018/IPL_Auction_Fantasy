@@ -1772,7 +1772,7 @@ function spinRandom() {
   btn.disabled=true; btn.classList.add('pulsing'); btn.textContent='\u23F3';
 
   const sc = document.getElementById('spotlightCard');
-  let spins=0, total=Math.round(3000/85); // fixed 3-second spin
+  let spins=0, total=Math.round(1000/85); // fixed 1-second spin
   if (spinInterval) { clearInterval(spinInterval); spinInterval=null; }
 
   spinInterval = setInterval(()=>{
@@ -1840,10 +1840,26 @@ function renderSpotlight(p, isCurrent=false) {
     <div class="bid-box">
       <div style="font-size:.62rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim)">Current Bid</div>
       <div class="bid-amount pulse">₹${state.auction.currentBid.toFixed(2)} Cr</div>
-      <div class="bid-team-name">${bidderTeam?'🏟️ '+bidderTeam.name:'No bid yet — select a team'}</div>
+      <div class="bid-team-name">${bidderTeam?'🏟️ '+bidderTeam.name:'No bid yet'}</div>
     </div>
+    ${(()=>{
+      const hist = state.auction.bidHistory || [];
+      if (!hist.length) return '';
+      const rows = [...hist].reverse().slice(0,5).map(entry=>{
+        const bidder = state.teams.find(t=>t.id===entry.teamId);
+        return bidder
+          ? '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.68rem;padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+            + '<span style="color:'+bidder.color+';font-weight:600">'+bidder.code+'</span>'
+            + '<span style="color:var(--text-dim)">&#8377;'+entry.bid.toFixed(2)+'Cr</span></div>'
+          : '';
+      }).filter(Boolean).join('');
+      return rows
+        ? '<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">'
+          + '<div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid Trail</div>'
+          + rows + '</div>'
+        : '';
+    })()}
 `:''}`;
-  // Repopulate stats from cache if already loaded
 }
 
 function browseStartAuction(id) {

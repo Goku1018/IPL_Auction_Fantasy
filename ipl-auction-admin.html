@@ -121,11 +121,6 @@ body::after {
   to   { transform: translateY(-30px) scale(1.08); }
 }
 
-@keyframes pausePulse {
-  0%,100% { opacity:.35; }
-  50% { opacity:.65; }
-}
-
 /* Fine dot grid overlay */
 .bg-grid {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
@@ -1068,7 +1063,6 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
           <button class="btn btn-success" id="btnSell" onclick="sellPlayer()" style="display:none">✅ SOLD!</button>
           <button class="btn btn-danger" id="btnUnsold" onclick="unsoldPlayer()" style="display:none">❌ Unsold</button>
           <button class="btn btn-outline" id="btnUndo" onclick="undoLastMove()" style="display:none" title="Undo last action">↺ Undo</button>
-          <button class="btn btn-outline" id="btnPause" onclick="togglePause()">⏸ Pause</button>
           <button class="btn btn-outline" onclick="resetAuction()" style="margin-left:auto">↩️ Reset Auction</button>
         </div>
 
@@ -1818,7 +1812,7 @@ function spinRandom() {
   btn.disabled=true; btn.classList.add('pulsing'); btn.textContent='\u23F3';
 
   const sc = document.getElementById('spotlightCard');
-  let spins=0, total=Math.round(3000/85); // fixed 3-second spin
+  let spins=0, total=Math.round(1000/85); // fixed 1-second spin
   if (spinInterval) { clearInterval(spinInterval); spinInterval=null; }
 
   // Signal spin start to viewer via Firebase — single write only
@@ -1871,6 +1865,7 @@ function startPlayerAuction(player) {
   state.auction.currentBid = player.basePrice;
   state.auction.currentBidder = null;
   state.auction.inProgress = true;
+  state.auction.bidHistory = []; // clear per-player bid history
   document.getElementById('btnSell').style.display='';
   document.getElementById('btnUnsold').style.display='';
   renderSpotlight(player, true);
@@ -1883,18 +1878,21 @@ function startPlayerAuction(player) {
 
 function renderSpotlight(p, isCurrent=false) {
   const bidderTeam = isCurrent && state.auction.currentBidder ? state.teams.find(t=>t.id===state.auction.currentBidder) : null;
-  // Build bid history from undo stack — last 4 bids
+  // Build bid history from per-player bidHistory array (clears on each new player)
   let bidHistoryHtml = '';
-  if (isCurrent && undoStack.length) {
-    const bids = undoStack.slice(-4).reverse().map(snap => {
-      const bidder = snap.auction.currentBidder ? state.teams.find(t=>t.id===snap.auction.currentBidder) : null;
-      return bidder ? `<div style="display:flex;justify-content:space-between;font-size:.68rem;padding:.18rem 0;color:var(--text-dim);border-bottom:1px solid rgba(255,255,255,0.04)">
-        <span style="color:${bidder.color}">${bidder.code}</span>
-        <span>₹${snap.auction.currentBid.toFixed(2)}Cr</span></div>` : '';
-    }).filter(Boolean).join('');
-    if (bids) bidHistoryHtml = `<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">
-      <div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid History</div>
-      ${bids}</div>`;
+  if (isCurrent) {
+    const hist = (state.auction.bidHistory || []);
+    if (hist.length) {
+      const bids = [...hist].reverse().slice(0,5).map(entry => {
+        const bidder = state.teams.find(t=>t.id===entry.teamId);
+        return bidder ? `<div style="display:flex;justify-content:space-between;align-items:center;font-size:.68rem;padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span style="color:${bidder.color};font-weight:600">${bidder.code}</span>
+          <span style="color:var(--text-dim)">₹${entry.bid.toFixed(2)}Cr</span></div>` : '';
+      }).filter(Boolean).join('');
+      if (bids) bidHistoryHtml = `<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">
+        <div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid Trail</div>
+        ${bids}</div>`;
+    }
   }
   document.getElementById('spotlightCard').innerHTML = `
     <div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">${p.country} · ${p.role}</div>
@@ -2012,7 +2010,11 @@ function renderAuctionTeams() {
           <div class="mini-team-name">${t.name}</div>
           <div class="mini-team-meta">
             <span class="mini-budget" style="${budgetStyle}">${budgetLabel}</span>
-            <span>${t.players.length}p · ${os}OS</span>
+          </div>
+          <div class="mini-team-meta" style="margin-top:.1rem">
+            <span style="color:var(--text-dim)">${t.players.length} players</span>
+            <span style="color:var(--text-dim)">·</span>
+            <span style="color:var(--text-dim)">${os} OS</span>
           </div>
         </div>
       </div>
@@ -2052,12 +2054,38 @@ function selectBidder(teamId) {
     if (typeof broadcastState === 'function') broadcastState();
     return;
   }
+
+  // ── Hard cap checks: block if team has hit any maximum ──
+  const squadNow = team.players.length;
+  const con = state.constraints;
+  if (squadNow >= con.maxSquad) {
+    const msg = team.name+' squad is full — already at max '+con.maxSquad+' players';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
+  const roleMax = (con.roles[p.role]||{}).max || 99;
+  const roleCur = team.players.filter(tp=>{ const pl=state.players.find(x=>x.id===tp.id); return pl&&pl.role===p.role; }).length;
+  if (roleCur >= roleMax) {
+    const msg = team.name+' already has the maximum '+roleMax+' '+p.role+'s allowed';
+    toast(msg,'error');
+    state.auction.notification = { type:'error', msgs:[msg], ts:Date.now() };
+    if (typeof broadcastState === 'function') broadcastState();
+    return;
+  }
+
   // First bid on a player stays at base price; subsequent bids raise by one increment
   const isFirstBid = (state.auction.currentBidder === null);
   const inc = isFirstBid ? 0 : getIncrement(state.auction.currentBid);
   const nextBid = parseFloat(Math.max(state.auction.currentBid + inc, p.basePrice).toFixed(2));
   if (!enforceFeasibility(team, p, nextBid)) return;
   saveSnapshot(team.code+' bidding at ₹'+state.auction.currentBid.toFixed(2)+'Cr');
+  // Record bid in per-player history before overwriting
+  if (state.auction.currentBidder !== null) {
+    state.auction.bidHistory = state.auction.bidHistory || [];
+    state.auction.bidHistory.push({ teamId: state.auction.currentBidder, bid: state.auction.currentBid });
+  }
   state.auction.currentBidder = teamId;
   state.auction.currentBid = nextBid;
   renderAuctionTeams();
@@ -2082,7 +2110,7 @@ function checkBidFeasibility(team, currentPlayer, bidAmt) {
   // ── 1. Basic budget check ─────────────────────────────────────────────
   const budgetAfter = parseFloat((team.budget - bidAmt).toFixed(2));
   if (budgetAfter < 0) {
-    errors.push('Budget exceeded — ₹' + bidAmt.toFixed(2) + 'Cr bid > ₹' + team.budget.toFixed(2) + 'Cr remaining.');
+    errors.push(team.name + ': Budget exceeded — ₹' + bidAmt.toFixed(2) + 'Cr bid > ₹' + team.budget.toFixed(2) + 'Cr remaining.');
     return { ok: false, warnings, errors };
   }
 
@@ -2225,7 +2253,7 @@ function checkBidFeasibility(team, currentPlayer, bidAmt) {
         .map(([r,v]) => v + ' ' + r)
         .join(', ');
       errors.push(
-        'Budget too tight! After this ₹' + bidAmt.toFixed(2) + 'Cr bid, only ₹' + budgetAfter.toFixed(2) +
+        team.name + ': Budget too tight! After this ₹' + bidAmt.toFixed(2) + 'Cr bid, only ₹' + budgetAfter.toFixed(2) +
         'Cr remains, but at least ₹' + minCostToFill.toFixed(2) +
         'Cr is needed for ' + minFillSlots + ' more required player' + (minFillSlots > 1 ? 's' : '') +
         (roleDetails ? ' (' + roleDetails + ')' : '') + '.'
@@ -2236,7 +2264,7 @@ function checkBidFeasibility(team, currentPlayer, bidAmt) {
     // Warn if budget is tight (< 2x the minimum needed)
     if (budgetAfter < minCostToFill * 2 && budgetAfter >= minCostToFill) {
       warnings.push(
-        'Tight budget! ₹' + budgetAfter.toFixed(2) + 'Cr left after this bid; still need ' +
+        team.name + ': Tight budget! ₹' + budgetAfter.toFixed(2) + 'Cr left after this bid; still need ' +
         minFillSlots + ' more player' + (minFillSlots > 1 ? 's' : '') +
         ' (min cost ₹' + minCostToFill.toFixed(2) + 'Cr).'
       );
@@ -2415,6 +2443,7 @@ function resetAuction() {
   document.getElementById('spotlightCard').innerHTML='<div class="empty-state"><div class="empty-state-icon">🎲</div><div class="empty-state-text">Ready to Start</div><div class="empty-state-sub">Use filters &amp; hit Spin to bring a player up</div></div>';
   renderPlayerTable(); renderTeams();
   updateAuctionStats(); renderAuctionTeams();
+  updateSpinBtn();
   saveState(); toast('Auction reset!','info');
 }
 
@@ -2617,9 +2646,6 @@ window.addEventListener('keydown', e => {
     case 'z': case 'Z':  // Z = Undo
       if ((e.ctrlKey || e.metaKey) || auctionActive) { e.preventDefault(); undoLastMove(); }
       break;
-    case 'p': case 'P':  // P = Pause/Resume
-      if (auctionActive) togglePause();
-      break;
     default:
       // 1–9: select team by position
       if (auctionActive && state.auction.inProgress && /^[1-9]$/.test(e.key)) {
@@ -2641,7 +2667,7 @@ function showKeyboardHint() {
     display:flex;gap:1.25rem;flex-wrap:wrap;justify-content:center;backdrop-filter:blur(12px);
     font-family:'Barlow Condensed',sans-serif;letter-spacing:.5px;`;
   hint.innerHTML = [
-    ['Space/Enter','Spin'],['S','Sell'],['U','Unsold'],['Ctrl+Z','Undo'],['P','Pause'],['1-9','Select Team']
+    ['Space/Enter','Spin'],['S','Sell'],['U','Unsold'],['Ctrl+Z','Undo'],['1-9','Select Team']
   ].map(([k,v])=>`<span><kbd style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:.1rem .35rem;font-size:.68rem;color:var(--gold)">${k}</kbd> ${v}</span>`).join('');
   document.body.appendChild(hint);
   setTimeout(()=>hint.remove(), 5000);
@@ -2676,33 +2702,6 @@ function clearAllData() {
     broadcastState();
   }
   toast('All data cleared', 'info');
-}
-
-// ── FIX 11: Pause / Resume ──
-let _auctionPaused = false;
-
-function togglePause() {
-  _auctionPaused = !_auctionPaused;
-  state.auction.paused = _auctionPaused;
-  const btn = document.getElementById('btnPause');
-  if (btn) {
-    btn.textContent = _auctionPaused ? '▶ Resume' : '⏸ Pause';
-    btn.className = _auctionPaused ? 'btn btn-gold' : 'btn btn-outline';
-  }
-  const overlay = document.getElementById('pauseOverlay');
-  if (_auctionPaused) {
-    if (!overlay) {
-      const ov = document.createElement('div');
-      ov.id = 'pauseOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(6,8,15,0.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;pointer-events:none;';
-      ov.innerHTML = '<div style="font-family:Teko,sans-serif;font-size:5rem;font-weight:700;color:rgba(255,215,0,0.35);letter-spacing:8px;text-transform:uppercase;animation:pausePulse 2s ease-in-out infinite">⏸ PAUSED</div>';
-      document.body.appendChild(ov);
-    }
-  } else {
-    overlay?.remove();
-  }
-  if (typeof broadcastState === 'function') broadcastState();
-  toast(_auctionPaused ? '⏸ Auction paused — viewers notified' : '▶ Auction resumed', 'info');
 }
 
 function clearFirebaseDB() {
