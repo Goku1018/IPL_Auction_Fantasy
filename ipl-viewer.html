@@ -2520,78 +2520,128 @@ function downloadAllTeams(fmt='xlsx') {
 // ===================== BOOT =====================
 let ROOM_NAME = '';
 
-function getSavedRooms() {
-  try { return JSON.parse(localStorage.getItem('ipl_rooms') || '[]'); } catch(e) { return []; }
+const VIEWER_SESSION_KEY = 'ipl_viewer_session'; // sessionStorage key
+
+function normalizeRoomName(raw) {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '_').replace(/_{2,}/g, '_');
 }
 
 function showRoomPicker() {
-  // Auto-detect room from URL param ?room=xxx
-  const urlRoom = new URLSearchParams(window.location.search).get('room');
-  if (urlRoom) { enterRoom(urlRoom); return; }
-  const saved = getSavedRooms();
+  const params = new URLSearchParams(window.location.search);
+  const urlRoom = params.get('room');
+  const urlToken = params.get('token');
+
+  // ── 1. Link with ?room=X&token=Y — skip passcode, go straight in ──
+  if (urlRoom && urlToken) {
+    const name = normalizeRoomName(urlRoom);
+    _bootViewerWithRoom(name, true);
+    return;
+  }
+
+  // ── 2. Session restore (refresh in same tab) ──
+  try {
+    const sess = JSON.parse(sessionStorage.getItem(VIEWER_SESSION_KEY) || 'null');
+    if (sess && sess.room) {
+      _bootViewerWithRoom(sess.room, true); // already verified before
+      return;
+    }
+  } catch(e) {}
+
+  // ── 3. Manual entry: ask for room name + passcode ──
   const overlay = document.createElement('div');
   overlay.id = 'roomPickerOverlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;z-index:9500;
-    background:rgba(6,8,15,0.97);backdrop-filter:blur(16px);
-    display:flex;align-items:center;justify-content:center;
-    font-family:'Barlow',sans-serif;
-  `;
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(6,8,15,0.97);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center;font-family:Barlow,sans-serif;';
   overlay.innerHTML = `
     <div style="background:rgba(13,17,32,0.95);border:1px solid rgba(0,230,118,0.2);border-radius:18px;padding:2.5rem;width:100%;max-width:440px;box-shadow:0 0 60px rgba(0,230,118,0.06)">
       <div style="text-align:center;margin-bottom:1.75rem">
         <div style="font-size:2.5rem;margin-bottom:.5rem">👁️</div>
-        <div style="font-family:'Teko',sans-serif;font-size:2rem;font-weight:700;color:#00E676;letter-spacing:3px">IPL AUCTION</div>
-        <div style="font-size:.75rem;color:#7B85B0;letter-spacing:2px;text-transform:uppercase;margin-top:.25rem">Viewer — Enter Auction Room</div>
+        <div style="font-family:Teko,sans-serif;font-size:2rem;font-weight:700;color:#00E676;letter-spacing:3px">IPL AUCTION</div>
+        <div style="font-size:.75rem;color:#7B85B0;letter-spacing:2px;text-transform:uppercase;margin-top:.25rem">Viewer — Join Auction Room</div>
       </div>
       <div style="margin-bottom:1rem">
         <label style="font-size:.68rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#7B85B0;display:block;margin-bottom:.4rem">Room Name</label>
-        <input id="roomNameInput" type="text" placeholder="Enter room name from admin" maxlength="40"
+        <input id="roomNameInput" type="text" placeholder="Ask admin for the room name" maxlength="40" autocomplete="off"
           style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(0,230,118,0.3);border-radius:8px;
-                 padding:.7rem 1rem;color:#F0F2FF;font-family:'Barlow',sans-serif;font-size:.95rem;outline:none;box-sizing:border-box;"
-          onkeydown="if(event.key==='Enter')enterRoom()"/>
-        <div style="font-size:.68rem;color:#7B85B0;margin-top:.4rem">Ask the auction admin for the room name.</div>
+                 padding:.7rem 1rem;color:#F0F2FF;font-family:Barlow,sans-serif;font-size:.95rem;outline:none;box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter')document.getElementById('passcodeInput').focus()"/>
+        <div style="font-size:.65rem;color:#7B85B0;margin-top:.3rem">Not case-sensitive.</div>
       </div>
-      <button onclick="enterRoom()" style="
+      <div style="margin-bottom:1.25rem">
+        <label style="font-size:.68rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#7B85B0;display:block;margin-bottom:.4rem">4-Digit Passcode</label>
+        <input id="passcodeInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="····" maxlength="4" autocomplete="off"
+          style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(0,230,118,0.3);border-radius:8px;
+                 padding:.7rem 1rem;color:#00E676;font-family:Teko,sans-serif;font-size:1.6rem;letter-spacing:.5rem;outline:none;box-sizing:border-box;text-align:center;"
+          onkeydown="if(event.key==='Enter')enterRoom()" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"/>
+      </div>
+      <div id="roomErrorMsg" style="color:#FF4757;font-size:.72rem;margin-bottom:.6rem;min-height:1.1rem"></div>
+      <button id="joinBtn" onclick="enterRoom()" style="
         width:100%;padding:.75rem;border-radius:8px;border:none;cursor:pointer;font-weight:800;
         font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:1.5px;text-transform:uppercase;
-        background:linear-gradient(135deg,#00E676,#00BCD4);color:#000;margin-bottom:${saved.length?'1.25rem':'0'};
-      ">▶ Watch Live</button>
-      ${saved.length ? `
-      <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:1rem">
-        <div style="font-size:.65rem;letter-spacing:1.5px;text-transform:uppercase;color:#7B85B0;margin-bottom:.5rem">Recent Rooms</div>
-        <div style="display:flex;flex-wrap:wrap;gap:.4rem">
-          ${saved.map(r=>`<button onclick="enterRoom('${r}')" style="
-            padding:.3rem .75rem;border-radius:20px;border:1px solid rgba(0,230,118,0.25);
-            background:rgba(0,230,118,0.07);color:#00E676;cursor:pointer;font-size:.75rem;
-            font-family:'Barlow Condensed',sans-serif;font-weight:600;letter-spacing:.5px;
-          ">${r}</button>`).join('')}
-        </div>
-      </div>` : ''}
+        background:linear-gradient(135deg,#00E676,#00BCD4);color:#000;">▶ Watch Live</button>
     </div>
   `;
   document.body.appendChild(overlay);
   setTimeout(() => document.getElementById('roomNameInput')?.focus(), 100);
 }
 
-function enterRoom(roomArg) {
-  const input = document.getElementById('roomNameInput');
-  const raw = (roomArg || input?.value || '').trim();
-  const name = raw.replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_{2,}/g, '_');
-  if (!name) { if(input){input.style.borderColor='#FF4757';input.focus();} return; }
+function enterRoom() {
+  const rawName = (document.getElementById('roomNameInput')?.value || '').trim();
+  const rawPass = (document.getElementById('passcodeInput')?.value || '').trim();
+  const errEl = document.getElementById('roomErrorMsg');
+  const btn = document.getElementById('joinBtn');
+
+  const name = normalizeRoomName(rawName);
+  if (!name) {
+    document.getElementById('roomNameInput').style.borderColor='#FF4757';
+    if (errEl) errEl.textContent = 'Enter a room name.';
+    document.getElementById('roomNameInput').focus();
+    return;
+  }
+  if (!/^[0-9]{4}$/.test(rawPass)) {
+    if (errEl) errEl.textContent = 'Enter the 4-digit passcode.';
+    document.getElementById('passcodeInput').style.borderColor='#FF4757';
+    document.getElementById('passcodeInput').focus();
+    return;
+  }
+
+  // Verify passcode against Firebase room_meta
+  if (btn) { btn.textContent = '⏳ Checking...'; btn.disabled = true; }
+  if (errEl) errEl.textContent = '';
+  _verifyAndJoin(name, rawPass);
+}
+
+function _verifyAndJoin(name, passcode) {
+  // connectViewerFirebase is defined in the Firebase module below.
+  // We call a special verify function that reads room_meta first.
+  if (typeof verifyRoomPasscode === 'function') {
+    verifyRoomPasscode(name, passcode, (ok) => {
+      if (ok) {
+        _bootViewerWithRoom(name, false);
+      } else {
+        const errEl = document.getElementById('roomErrorMsg');
+        if (errEl) errEl.textContent = '❌ Wrong room name or passcode. Try again.';
+        const btn = document.getElementById('joinBtn');
+        if (btn) { btn.textContent = '▶ Watch Live'; btn.disabled = false; }
+        document.getElementById('passcodeInput').style.borderColor='#FF4757';
+        document.getElementById('passcodeInput').value = '';
+        document.getElementById('passcodeInput').focus();
+      }
+    });
+  } else {
+    // Firebase not loaded — fallback, connect anyway
+    _bootViewerWithRoom(name, false);
+  }
+}
+
+function _bootViewerWithRoom(name, skipPasscodeCheck) {
   ROOM_NAME = name;
-  // Save to history
-  try {
-    const rooms = JSON.parse(localStorage.getItem('ipl_rooms')||'[]').filter(r=>r!==name);
-    rooms.unshift(name);
-    localStorage.setItem('ipl_rooms', JSON.stringify(rooms.slice(0,10)));
-  } catch(e){}
+  // Save session so refresh skips picker
+  try { sessionStorage.setItem(VIEWER_SESSION_KEY, JSON.stringify({ room: name })); } catch(e) {}
   document.title = 'IPL Auction — Live [' + name + ']';
   const badge = document.getElementById('roomBadge');
   if (badge) { badge.textContent = '🏟️ ' + name; badge.style.display = 'inline-flex'; }
   document.getElementById('roomPickerOverlay')?.remove();
   if (typeof connectViewerFirebase === 'function') connectViewerFirebase(name);
-  // Init UI
   if (document.getElementById('teamsGrid'))             renderTeams();
   if (document.getElementById('playerTableContainer'))  renderPlayerTable();
   updatePlayerUI(); updateMatchCount();
@@ -2627,7 +2677,7 @@ function applyViewerRestrictions() {
 <script type="module">
 // ===================== FIREBASE REAL-TIME SYNC (VIEWER) =====================
 import { initializeApp }              from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, onValue }  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, onValue, get }  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyD0usX707N56yMvwwLT3qn0zeXVuG2mxSg",
@@ -2647,6 +2697,23 @@ try {
   let _viewerSpinInterval = null;
   let _isSpinning = false;
   let _unsubscribe = null; // holds current onValue unsubscribe fn
+
+  // Verify passcode against Firebase room_meta before letting viewer in
+  window.verifyRoomPasscode = function(roomName, passcode, callback) {
+    const metaRef = ref(db, 'room_meta/' + roomName + '/passcode');
+    get(metaRef).then(snap => {
+      const stored = snap.val();
+      if (stored === null || stored === undefined) {
+        // No passcode set yet (admin hasn't entered room) — block with friendly message
+        callback(false);
+      } else {
+        callback(String(stored) === String(passcode));
+      }
+    }).catch(e => {
+      console.warn('Passcode verify failed:', e.message);
+      callback(false);
+    });
+  };
 
   // Called by enterRoom() after room name is chosen
   window.connectViewerFirebase = function(roomName) {
@@ -2790,6 +2857,7 @@ try {
 
 } catch(e) {
   console.error('Firebase init failed:', e.message);
+  window.verifyRoomPasscode = function(room, pass, cb) { cb(true); }; // fallback: allow all
 }
 </script>
 <div id="toastContainer" style="position:fixed;bottom:1.5rem;right:1.5rem;display:flex;flex-direction:column;gap:.5rem;z-index:9999"></div>
