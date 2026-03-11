@@ -919,7 +919,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 </head>
 <body>
 <header>
-  <div class="header-logo">🏏 IPL Auction <span style="font-size:.7rem;background:rgba(0,230,118,0.15);border:1px solid var(--green);color:var(--green);padding:.15rem .5rem;border-radius:12px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;font-weight:700">LIVE</span></div>
+  <div class="header-logo">🏏 IPL Auction <span style="font-size:.7rem;background:rgba(0,230,118,0.15);border:1px solid var(--green);color:var(--green);padding:.15rem .5rem;border-radius:12px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;font-weight:700">LIVE</span> <span id="roomBadge" style="display:none;font-size:.7rem;color:var(--gold);font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.25);padding:.15rem .5rem;border-radius:12px;font-weight:700"></span></div>
   <div class="header-right">
     <div id="saveIndicator" class="save-indicator"><span id="saveText"></span></div>
     <div id="syncPing" style="font-size:.72rem;color:var(--green);opacity:0;transition:opacity .5s;font-family:'Barlow Condensed',sans-serif;letter-spacing:1.5px;font-weight:700">⚡ SYNCED</div>
@@ -2376,13 +2376,89 @@ function downloadAllTeams(fmt='xlsx') {
 }
 
 // ===================== BOOT =====================
-window.addEventListener('DOMContentLoaded', ()=>{
-  // Viewer: render whatever is in state (populated by Firebase onValue)
+let ROOM_NAME = '';
+
+function getSavedRooms() {
+  try { return JSON.parse(localStorage.getItem('ipl_rooms') || '[]'); } catch(e) { return []; }
+}
+
+function showRoomPicker() {
+  // Auto-detect room from URL param ?room=xxx
+  const urlRoom = new URLSearchParams(window.location.search).get('room');
+  if (urlRoom) { enterRoom(urlRoom); return; }
+  const saved = getSavedRooms();
+  const overlay = document.createElement('div');
+  overlay.id = 'roomPickerOverlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:9500;
+    background:rgba(6,8,15,0.97);backdrop-filter:blur(16px);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Barlow',sans-serif;
+  `;
+  overlay.innerHTML = `
+    <div style="background:rgba(13,17,32,0.95);border:1px solid rgba(0,230,118,0.2);border-radius:18px;padding:2.5rem;width:100%;max-width:440px;box-shadow:0 0 60px rgba(0,230,118,0.06)">
+      <div style="text-align:center;margin-bottom:1.75rem">
+        <div style="font-size:2.5rem;margin-bottom:.5rem">👁️</div>
+        <div style="font-family:'Teko',sans-serif;font-size:2rem;font-weight:700;color:#00E676;letter-spacing:3px">IPL AUCTION</div>
+        <div style="font-size:.75rem;color:#7B85B0;letter-spacing:2px;text-transform:uppercase;margin-top:.25rem">Viewer — Enter Auction Room</div>
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.68rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#7B85B0;display:block;margin-bottom:.4rem">Room Name</label>
+        <input id="roomNameInput" type="text" placeholder="Enter room name from admin" maxlength="40"
+          style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(0,230,118,0.3);border-radius:8px;
+                 padding:.7rem 1rem;color:#F0F2FF;font-family:'Barlow',sans-serif;font-size:.95rem;outline:none;box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter')enterRoom()"/>
+        <div style="font-size:.68rem;color:#7B85B0;margin-top:.4rem">Ask the auction admin for the room name.</div>
+      </div>
+      <button onclick="enterRoom()" style="
+        width:100%;padding:.75rem;border-radius:8px;border:none;cursor:pointer;font-weight:800;
+        font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:1.5px;text-transform:uppercase;
+        background:linear-gradient(135deg,#00E676,#00BCD4);color:#000;margin-bottom:${saved.length?'1.25rem':'0'};
+      ">▶ Watch Live</button>
+      ${saved.length ? `
+      <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:1rem">
+        <div style="font-size:.65rem;letter-spacing:1.5px;text-transform:uppercase;color:#7B85B0;margin-bottom:.5rem">Recent Rooms</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+          ${saved.map(r=>`<button onclick="enterRoom('${r}')" style="
+            padding:.3rem .75rem;border-radius:20px;border:1px solid rgba(0,230,118,0.25);
+            background:rgba(0,230,118,0.07);color:#00E676;cursor:pointer;font-size:.75rem;
+            font-family:'Barlow Condensed',sans-serif;font-weight:600;letter-spacing:.5px;
+          ">${r}</button>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('roomNameInput')?.focus(), 100);
+}
+
+function enterRoom(roomArg) {
+  const input = document.getElementById('roomNameInput');
+  const raw = (roomArg || input?.value || '').trim();
+  const name = raw.replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_{2,}/g, '_');
+  if (!name) { if(input){input.style.borderColor='#FF4757';input.focus();} return; }
+  ROOM_NAME = name;
+  // Save to history
+  try {
+    const rooms = JSON.parse(localStorage.getItem('ipl_rooms')||'[]').filter(r=>r!==name);
+    rooms.unshift(name);
+    localStorage.setItem('ipl_rooms', JSON.stringify(rooms.slice(0,10)));
+  } catch(e){}
+  document.title = 'IPL Auction — Live [' + name + ']';
+  const badge = document.getElementById('roomBadge');
+  if (badge) { badge.textContent = '🏟️ ' + name; badge.style.display = 'inline-flex'; }
+  document.getElementById('roomPickerOverlay')?.remove();
+  if (typeof connectViewerFirebase === 'function') connectViewerFirebase(name);
+  // Init UI
   if (document.getElementById('teamsGrid'))             renderTeams();
   if (document.getElementById('playerTableContainer'))  renderPlayerTable();
   updatePlayerUI(); updateMatchCount();
   initAuctionRoom();
   applyViewerRestrictions();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  showRoomPicker();
 });
 
 // clearAllData removed — viewer has read-only access
@@ -2425,17 +2501,24 @@ const firebaseConfig = {
 try {
   const app = initializeApp(firebaseConfig);
   const db  = getDatabase(app);
-  const dbRef = ref(db, 'auction_state');
-  console.log('Firebase viewer connected ✅');
 
-  // Update sync badge
-  const ping = document.getElementById('syncPing');
-  if (ping) { ping.style.opacity = '0.5'; ping.textContent = '⏳ Connecting...'; }
-
-  // Listen for live state from admin
   // ── Local spin vars (viewer runs its own animation) ──
   let _viewerSpinInterval = null;
   let _isSpinning = false;
+  let _unsubscribe = null; // holds current onValue unsubscribe fn
+
+  // Called by enterRoom() after room name is chosen
+  window.connectViewerFirebase = function(roomName) {
+    // Unsubscribe from any previous room
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    const dbRef = ref(db, 'auction_rooms/' + roomName);
+    console.log('Firebase viewer connected ✅ — room:', roomName);
+
+    const ping = document.getElementById('syncPing');
+    if (ping) { ping.style.opacity = '0.5'; ping.textContent = '⏳ Connecting...'; }
+
+    _unsubscribe = onValue(dbRef, handleSnapshot);
+  };
 
   function startViewerSpin() {
     if (_viewerSpinInterval) return; // already running
@@ -2464,8 +2547,9 @@ try {
     _isSpinning = false;
   }
 
-  onValue(dbRef, (snapshot) => {
+  function handleSnapshot(snapshot) {
     const data = snapshot.val();
+    const ping = document.getElementById('syncPing');
     // ── Database wiped (remove() called by admin) — reset viewer to blank state ──
     if (!data || !data.payload) {
       stopViewerSpin();
@@ -2546,7 +2630,7 @@ try {
         ping._t = setTimeout(() => { ping.style.opacity = '0.4'; ping.textContent = '● LIVE'; }, 2000);
       }
     } catch(err) { console.warn('Sync parse error', err); }
-  });
+  } // end handleSnapshot
 
 } catch(e) {
   console.error('Firebase init failed:', e.message);
