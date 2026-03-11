@@ -1770,10 +1770,7 @@ function renderSpotlight(p, isCurrent=false) {
       <div class="bid-amount pulse">₹${state.auction.currentBid.toFixed(2)} Cr</div>
       <div class="bid-team-name">${bidderTeam?'🏟️ '+bidderTeam.name:'No bid yet — select a team'}</div>
     </div>
-    <div class="bid-custom-row">
-      <input type="number" id="customBidInput" placeholder="Custom bid (Cr)" min="${p.basePrice}" step="0.05" onkeydown="if(event.key==='Enter')setCustomBid()"/>
-      <button class="btn btn-gold btn-sm" onclick="setCustomBid()" style="white-space:nowrap">🎯 Set Bid</button>
-    </div>`:''}`;
+`:''}`;
   // Repopulate stats from cache if already loaded
 }
 
@@ -2148,26 +2145,6 @@ function raiseBid(amt) {
   renderSpotlight(state.auction.currentPlayer, true);
 }
 
-function setCustomBid() {
-  if (!state.auction.inProgress) return;
-  const team = state.teams.find(t=>t.id===state.auction.currentBidder);
-  if (!team) return toast('Select a bidding team first!','error');
-  const input = document.getElementById('customBidInput');
-  if (!input) return;
-  const val = parseFloat(input.value);
-  if (isNaN(val) || val <= 0) return toast('Enter a valid bid amount in Crores','error');
-  const p = state.auction.currentPlayer;
-  if (val < p.basePrice) return toast('Bid cannot be below base price ₹'+p.basePrice.toFixed(2)+'Cr','error');
-  if (val <= state.auction.currentBid) return toast('Bid must be higher than current ₹'+state.auction.currentBid.toFixed(2)+'Cr','error');
-  const newBid = parseFloat(val.toFixed(2));
-  if (!enforceFeasibility(team, p, newBid)) return;
-  saveSnapshot('Custom bid ₹'+state.auction.currentBid.toFixed(2)+'Cr → ₹'+newBid.toFixed(2)+'Cr');
-  state.auction.currentBid = newBid;
-  input.value = '';
-  renderSpotlight(p, true);
-  toast(team.code+' custom bid ₹'+newBid.toFixed(2)+'Cr','info');
-}
-
 function sellPlayer() {
   const p = state.auction.currentPlayer;
   if (!p) return;
@@ -2415,7 +2392,7 @@ function applyViewerRestrictions() {
    'btnSell','btnUnsold','btnUndo','chipUnsold'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
-  document.querySelectorAll('.bid-custom-row, .browse-bid-btn').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.browse-bid-btn').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.mini-team-card').forEach(el => {
     el.style.pointerEvents = 'none'; el.style.cursor = 'default';
   });

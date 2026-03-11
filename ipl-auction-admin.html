@@ -895,6 +895,23 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
     <div style="margin-top:1rem"><button class="btn btn-gold" onclick="saveConstraints()">💾 Save All</button></div>
   </div>
 
+  <!-- Divider -->
+  <div class="admin-section-label" style="margin-top:.5rem">🔥 Firebase & Sync</div>
+
+  <div class="card" style="border-color:rgba(255,71,87,0.25);background:rgba(255,71,87,0.04)">
+    <div class="card-header"><div class="card-icon" style="background:rgba(255,71,87,0.15);border-color:rgba(255,71,87,0.3)">⚠️</div><div class="card-title" style="background:none;-webkit-text-fill-color:var(--danger);color:var(--danger)">Danger Zone</div></div>
+    <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:1rem;line-height:1.6">
+      If multiple tabs or viewers are showing stale or conflicting data (e.g. wrong feasibility errors at auction start),
+      use <strong style="color:var(--text)">Clear Firebase DB</strong> to wipe the remote database and re-push the current local state.
+      This forces all connected viewers to re-sync cleanly.<br/>
+      <span style="color:var(--danger);font-size:.76rem">⚠️ This will disconnect viewers momentarily — they will auto-reconnect with fresh data.</span>
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-danger" onclick="clearFirebaseDB()">🔥 Clear Firebase DB &amp; Re-sync</button>
+      <button class="btn btn-danger" onclick="clearAllData()" style="opacity:.8">🗑️ Clear All Local + Firebase</button>
+    </div>
+  </div>
+
 </div>
 
 <div id="tab-players" class="tab-panel">
@@ -2422,21 +2439,38 @@ function deleteAllPlayers() {
 }
 
 function clearAllData() {
-  if (!confirm('Delete all saved data?')) return;
+  if (!confirm('Delete all saved data? This clears localStorage AND Firebase.')) return;
   localStorage.removeItem(SKEY);
   state = defaultState();
-  window.state = state; // sync so Firebase module sees empty state
+  window.state = state;
   renderTeams(); renderPlayerTable(); renderConstraintsPanel();
   updatePlayerUI(); updateMatchCount();
   document.getElementById('storageBanner')?.remove();
-  if (typeof broadcastState === 'function') broadcastState(); // push empty state to Firebase
-  toast('Data cleared','info');
+  if (typeof removeFirebaseDB === 'function') {
+    removeFirebaseDB();
+  } else if (typeof broadcastState === 'function') {
+    broadcastState();
+  }
+  toast('All data cleared', 'info');
+}
+
+function clearFirebaseDB() {
+  if (!confirm('Wipe the Firebase database and re-push current local state to all viewers?')) return;
+  if (typeof removeFirebaseDB === 'function') {
+    removeFirebaseDB(() => {
+      if (typeof broadcastState === 'function') broadcastState();
+      toast('🔥 Firebase cleared & re-synced — viewers will reload shortly', 'success');
+    });
+  } else {
+    if (typeof broadcastState === 'function') broadcastState();
+    toast('Re-synced current state to Firebase', 'success');
+  }
 }
 </script>
 <script type="module">
 // ===================== FIREBASE REAL-TIME SYNC =====================
 import { initializeApp }         from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyD0usX707N56yMvwwLT3qn0zeXVuG2mxSg",
@@ -2467,6 +2501,14 @@ try {
       .catch(e => console.warn('Firebase write failed:', e.message));
   };
 
+  // Expose removeFirebaseDB globally for the danger-zone clear button
+  window.removeFirebaseDB = function (callback) {
+    if (!_fbRef) return;
+    remove(_fbRef)
+      .then(() => { if (typeof callback === 'function') callback(); })
+      .catch(e => console.warn('Firebase remove failed:', e.message));
+  };
+
   // Show status indicator
   const statusEl = document.getElementById('fbStatus');
   if (statusEl) { statusEl.style.display = 'flex'; statusEl.textContent = '🔥 Firebase connected'; }
@@ -2474,6 +2516,7 @@ try {
 } catch (e) {
   console.error('Firebase init failed:', e.message);
   window.broadcastState = function () {}; // no-op fallback
+  window.removeFirebaseDB = function () {}; // no-op fallback
 }
 </script>
 <div id="toastContainer" style="position:fixed;bottom:1.5rem;right:1.5rem;display:flex;flex-direction:column;gap:.5rem;z-index:9999"></div>
