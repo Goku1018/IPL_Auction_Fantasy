@@ -1150,40 +1150,59 @@ function showLockOverlay() {
       display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1rem;
       font-family:'Barlow',sans-serif;text-align:center;padding:2rem;
     `;
-    overlay.innerHTML = `
-      <div style="font-size:3rem">🔒</div>
-      <div style="font-family:'Teko',sans-serif;font-size:2rem;font-weight:700;color:#FFD700;letter-spacing:2px">ADMIN ALREADY OPEN</div>
-      <div style="color:#7B85B0;font-size:.95rem;max-width:480px;line-height:1.7">
-        Another tab or browser already has admin control of this auction.<br/>
-        <strong style="color:#F0F2FF">Only one admin tab should be active at a time</strong> to prevent conflicting state and feasibility errors.
-      </div>
-      <div style="display:flex;gap:1rem;margin-top:.5rem;flex-wrap:wrap;justify-content:center">
-        <button onclick="takeOverSession()" style="
-          padding:.65rem 1.4rem;border-radius:8px;border:none;cursor:pointer;font-weight:700;
-          font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
-          background:linear-gradient(135deg,#FFD700,#FF6B1A);color:#000;
-        ">⚡ Take Over as Admin</button>
-        <button onclick="window.close()" style="
-          padding:.65rem 1.4rem;border-radius:8px;cursor:pointer;font-weight:700;
-          font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
-          background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#7B85B0;
-        ">✕ Close This Tab</button>
-      </div>
-      <div style="font-size:.72rem;color:#7B85B0;margin-top:.25rem">
-        If the other admin tab was closed accidentally, click <em>Take Over</em> — the lock expires automatically after 8 seconds.
-      </div>
-    `;
     document.body.appendChild(overlay);
   }
+  // Rebuild content each time so buttons are always fresh and never disabled
+  overlay.innerHTML = `
+    <div style="font-size:3rem">🔒</div>
+    <div style="font-family:'Teko',sans-serif;font-size:2rem;font-weight:700;color:#FFD700;letter-spacing:2px">ADMIN ALREADY OPEN</div>
+    <div style="color:#7B85B0;font-size:.95rem;max-width:480px;line-height:1.7">
+      Another tab or browser already has admin control of this auction.<br/>
+      <strong style="color:#F0F2FF">Only one admin tab should be active at a time</strong> to prevent conflicting state and feasibility errors.
+    </div>
+    <div style="display:flex;gap:1rem;margin-top:.5rem;flex-wrap:wrap;justify-content:center">
+      <button id="lockTakeOverBtn" style="
+        padding:.65rem 1.4rem;border-radius:8px;border:none;cursor:pointer;font-weight:700;
+        font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
+        background:linear-gradient(135deg,#FFD700,#FF6B1A);color:#000;
+      ">⚡ Take Over as Admin</button>
+      <button id="lockCloseBtn" style="
+        padding:.65rem 1.4rem;border-radius:8px;cursor:pointer;font-weight:700;
+        font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
+        background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#7B85B0;
+      ">✕ Close This Tab</button>
+    </div>
+    <div style="font-size:.72rem;color:#7B85B0;margin-top:.25rem">
+      If the other admin tab was closed accidentally, click <em>Take Over</em> — the lock expires automatically after 8 seconds.
+    </div>
+  `;
   overlay.style.display = 'flex';
-  // Also disable all interactive controls underneath so keyboard shortcuts can't fire
-  document.querySelectorAll('button, input, select').forEach(el => el.disabled = true);
+  // Attach listeners via JS (not inline onclick) so they are never affected by the disabled sweep
+  document.getElementById('lockTakeOverBtn').addEventListener('click', takeOverSession);
+  document.getElementById('lockCloseBtn').addEventListener('click', closeThisTab);
+  // Disable all page controls EXCEPT those inside the overlay
+  document.querySelectorAll('button, input, select').forEach(el => {
+    if (!overlay.contains(el)) el.disabled = true;
+  });
+}
+
+function closeThisTab() {
+  // window.close() only works for script-opened tabs; redirect to blank page as fallback
+  window.close();
+  // If close was blocked by the browser, show a clear instruction instead
+  setTimeout(() => {
+    const overlay = document.getElementById('sessionLockOverlay');
+    if (overlay) overlay.innerHTML += `
+      <div style="margin-top:.75rem;padding:.6rem 1.2rem;background:rgba(255,71,87,0.12);border:1px solid rgba(255,71,87,0.3);border-radius:8px;color:#ff6b6b;font-size:.82rem;">
+        Your browser blocked automatic tab close.<br/>Please close this tab manually (<strong>Ctrl+W</strong> / <strong>⌘+W</strong>).
+      </div>`;
+  }, 300);
 }
 
 function hideLockOverlay() {
   const overlay = document.getElementById('sessionLockOverlay');
   if (overlay) overlay.remove();
-  // Re-enable all controls
+  // Re-enable all page controls
   document.querySelectorAll('button, input, select').forEach(el => el.disabled = false);
 }
 
