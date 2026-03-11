@@ -10,6 +10,9 @@
   ║  5. Copy the firebaseConfig object shown                        ║
   ║  6. In the left sidebar: Build → Realtime Database → Create     ║
   ║     → Start in TEST MODE (allows read/write for 30 days)        ║
+  ║     ⚠️ TEST MODE EXPIRES in 30 days — rules become read-only!   ║
+  ║     After 30 days: go to Rules tab, set read/write to true      ║
+  ║     to keep the auction working. Or use authenticated rules.    ║
   ║  7. Paste your firebaseConfig values below where indicated      ║
   ║  8. Both admin and viewer use the same config values            ║
   ╚══════════════════════════════════════════════════════════════════╝
@@ -116,6 +119,11 @@ body::after {
 @keyframes orbFloat {
   from { transform: translateY(0) scale(1); }
   to   { transform: translateY(-30px) scale(1.08); }
+}
+
+@keyframes pausePulse {
+  0%,100% { opacity:.35; }
+  50% { opacity:.65; }
 }
 
 /* Fine dot grid overlay */
@@ -1017,7 +1025,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
           <div style="font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.3rem">Price Range (₹Cr)</div>
           <div class="range-row"><span style="font-size:.68rem;color:var(--text-dim);width:22px">Min</span><input type="range" id="priceMin" min="0.1" max="20" step="0.1" value="0.1" oninput="updateRangeLabel('priceMin','lblMin')"/><span class="range-label" id="lblMin">0.1</span></div>
           <div class="range-row"><span style="font-size:.68rem;color:var(--text-dim);width:22px">Max</span><input type="range" id="priceMax" min="0.1" max="20" step="0.1" value="20" oninput="updateRangeLabel('priceMax','lblMax')"/><span class="range-label" id="lblMax">20</span></div>
-          <div class="match-pill">🎯 <strong id="matchCount">0</strong>&nbsp;matching</div>
+          <div class="match-pill" id="matchPill" style="cursor:pointer" onclick="if(rand.mode==='browse')renderBrowse()">🎯 <strong id="matchCount">0</strong>&nbsp;matching players</div>
 
           <!-- Spin mode -->
           <div id="modeSpin">
@@ -1027,7 +1035,17 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 
           <!-- Browse mode -->
           <div id="modeBrowse" style="display:none">
-            <input type="text" id="browseSearch" placeholder="Search player name…" oninput="renderBrowse()" style="width:100%;margin-bottom:.5rem;font-size:.82rem;"/>
+            <input type="text" id="browseSearch" placeholder="Search player name…" oninput="renderBrowse()" style="width:100%;margin-bottom:.4rem;font-size:.82rem;"/>
+            <div style="display:flex;gap:.4rem;margin-bottom:.5rem;align-items:center;">
+              <label style="font-size:.6rem;margin:0">Sort:</label>
+              <select id="browseSort" onchange="renderBrowse()" style="font-size:.7rem;padding:.25rem .4rem;flex:1">
+                <option value="name">Name A–Z</option>
+                <option value="price_asc">Price ↑</option>
+                <option value="price_desc">Price ↓</option>
+                <option value="role">By Role</option>
+                <option value="country">By Country</option>
+              </select>
+            </div>
             <div id="browseList" style="max-height:220px;overflow-y:auto;"></div>
           </div>
         </div>
@@ -1050,6 +1068,7 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
           <button class="btn btn-success" id="btnSell" onclick="sellPlayer()" style="display:none">✅ SOLD!</button>
           <button class="btn btn-danger" id="btnUnsold" onclick="unsoldPlayer()" style="display:none">❌ Unsold</button>
           <button class="btn btn-outline" id="btnUndo" onclick="undoLastMove()" style="display:none" title="Undo last action">↺ Undo</button>
+          <button class="btn btn-outline" id="btnPause" onclick="togglePause()">⏸ Pause</button>
           <button class="btn btn-outline" onclick="resetAuction()" style="margin-left:auto">↩️ Reset Auction</button>
         </div>
 
@@ -1223,7 +1242,52 @@ let rand = {
   mode: 'spin'
 };
 let spinInterval = null;
-let lastSnapshot = null; // undo snapshot
+// ── Undo stack (up to 10 steps) ──
+const UNDO_LIMIT = 10;
+let undoStack = []; // array of snapshots, newest last
+
+function saveSnapshot(label) {
+  undoStack.push({
+    label,
+    players: JSON.parse(JSON.stringify(state.players)),
+    teams:   JSON.parse(JSON.stringify(state.teams)),
+    auction: JSON.parse(JSON.stringify(state.auction)),
+    logHTML: document.getElementById('auctionLog')?.innerHTML || ''
+  });
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  const btn = document.getElementById('btnUndo');
+  if (btn) { btn.style.display=''; btn.title='↺ Undo: '+label+' ('+undoStack.length+' step'+(undoStack.length>1?'s':'')+')'; }
+}
+
+function undoLastMove() {
+  if (!undoStack.length) return toast('Nothing to undo','info');
+  const snap = undoStack.pop();
+  state.players = snap.players;
+  state.teams   = snap.teams;
+  state.auction = snap.auction;
+  const logEl = document.getElementById('auctionLog');
+  if (logEl) logEl.innerHTML = snap.logHTML;
+  if (state.auction.inProgress && state.auction.currentPlayer) {
+    renderSpotlight(state.auction.currentPlayer, true);
+    document.getElementById('btnSell').style.display = '';
+    document.getElementById('btnUnsold').style.display = '';
+  } else {
+    const pendingLeft = state.players.filter(p=>p.status==='pending').length;
+    document.getElementById('spotlightCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">${pendingLeft?'🎲':'🏆'}</div><div class="empty-state-text">${pendingLeft?'Spin for Next Player':'Auction Complete! 🏆'}</div><div class="empty-state-sub">${pendingLeft?pendingLeft+' players remaining — hit Spin':'All players have been auctioned'}</div></div>`;
+    document.getElementById('btnSell').style.display = 'none';
+    document.getElementById('btnUnsold').style.display = 'none';
+  }
+  const sfUndo = document.getElementById('filterStatus');
+  if (sfUndo) sfUndo.value = '';
+  const btn = document.getElementById('btnUndo');
+  if (btn) {
+    if (undoStack.length === 0) { btn.style.display='none'; }
+    else { btn.title='↺ Undo: '+undoStack[undoStack.length-1].label+' ('+undoStack.length+' step'+(undoStack.length>1?'s':'')+')'; }
+  }
+  renderPlayerTable(); renderTeams(); renderAuctionTeams();
+  updateAuctionStats(); saveState();
+  toast('↺ Undone: '+snap.label+(undoStack.length?' ('+undoStack.length+' more undo'+(undoStack.length>1?'s':'')+' available)':''), 'info');
+}
 
 // ===================== TOAST =====================
 function toast(msg, type='info') {
@@ -1262,6 +1326,7 @@ function switchTab(name, btn) {
   dots.forEach((d,i) => { d.className='phase-dot'; if(i<idx) d.classList.add('done'); else if(i===idx) d.classList.add('active'); });
   if (name==='auction') initAuctionRoom();
   if (name==='results') renderResults();
+  if (name==='auction') setTimeout(showKeyboardHint, 400);
   if (name==='admin') renderConstraintsPanel();
 }
 
@@ -1731,8 +1796,22 @@ function updateMatchCount() {
 }
 
 // Spin
+function updateSpinBtn() {
+  const btn = document.getElementById('spinBtn');
+  if (!btn) return;
+  if (state.auction.inProgress) {
+    btn.disabled = true;
+    btn.style.opacity = '0.35';
+    btn.title = 'Finish the current player before spinning again';
+  } else {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.title = '';
+  }
+}
+
 function spinRandom() {
-  if (state.auction.inProgress) return toast('Finish the current player first!','error');
+  if (state.auction.inProgress) return toast('Finish the current player first — Sell or Unsold','error');
   const pool = getPool();
   if (!pool.length) return toast('No players match filters!','error');
   const btn = document.getElementById('spinBtn');
@@ -1797,12 +1876,26 @@ function startPlayerAuction(player) {
   renderSpotlight(player, true);
   renderAuctionTeams();
   updateAuctionStats();
+  updateSpinBtn();
   saveState();
   addLog('🔔 '+player.name+' up for auction (base ₹'+player.basePrice.toFixed(2)+'Cr)');
 }
 
 function renderSpotlight(p, isCurrent=false) {
   const bidderTeam = isCurrent && state.auction.currentBidder ? state.teams.find(t=>t.id===state.auction.currentBidder) : null;
+  // Build bid history from undo stack — last 4 bids
+  let bidHistoryHtml = '';
+  if (isCurrent && undoStack.length) {
+    const bids = undoStack.slice(-4).reverse().map(snap => {
+      const bidder = snap.auction.currentBidder ? state.teams.find(t=>t.id===snap.auction.currentBidder) : null;
+      return bidder ? `<div style="display:flex;justify-content:space-between;font-size:.68rem;padding:.18rem 0;color:var(--text-dim);border-bottom:1px solid rgba(255,255,255,0.04)">
+        <span style="color:${bidder.color}">${bidder.code}</span>
+        <span>₹${snap.auction.currentBid.toFixed(2)}Cr</span></div>` : '';
+    }).filter(Boolean).join('');
+    if (bids) bidHistoryHtml = `<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">
+      <div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid History</div>
+      ${bids}</div>`;
+  }
   document.getElementById('spotlightCard').innerHTML = `
     <div style="font-size:.68rem;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem">${p.country} · ${p.role}</div>
     <div class="spotlight-name">${p.name}</div>
@@ -1818,11 +1911,11 @@ function renderSpotlight(p, isCurrent=false) {
       <div class="bid-amount pulse">₹${state.auction.currentBid.toFixed(2)} Cr</div>
       <div class="bid-team-name">${bidderTeam?'🏟️ '+bidderTeam.name:'No bid yet — select a team'}</div>
     </div>
+    ${bidHistoryHtml}
     <div class="bid-custom-row">
       <input type="number" id="customBidInput" placeholder="Custom bid (Cr)" min="${p.basePrice}" step="0.05" onkeydown="if(event.key==='Enter')setCustomBid()"/>
       <button class="btn btn-gold btn-sm" onclick="setCustomBid()" style="white-space:nowrap">🎯 Set Bid</button>
     </div>`:''}`;
-  // Repopulate stats from cache if already loaded
 }
 
 function browseStartAuction(id) {
@@ -1847,7 +1940,13 @@ function renderBrowse() {
   const container = document.getElementById('browseList');
   if (!container) return;
   const search = (document.getElementById('browseSearch')?.value||'').toLowerCase();
-  const pool = getPool().filter(p=>!search||p.name.toLowerCase().includes(search));
+  const sort = document.getElementById('browseSort')?.value || 'name';
+  let pool = getPool().filter(p=>!search||p.name.toLowerCase().includes(search));
+  if (sort==='name') pool.sort((a,b)=>a.name.localeCompare(b.name));
+  else if (sort==='price_asc') pool.sort((a,b)=>a.basePrice-b.basePrice);
+  else if (sort==='price_desc') pool.sort((a,b)=>b.basePrice-a.basePrice);
+  else if (sort==='role') pool.sort((a,b)=>a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
+  else if (sort==='country') pool.sort((a,b)=>a.country.localeCompare(b.country)||a.name.localeCompare(b.name));
   if (!pool.length) { container.innerHTML='<div style="color:var(--text-dim);font-size:.78rem;text-align:center;padding:.75rem">No players found</div>'; return; }
   container.innerHTML = pool.map(p=>{
     return `<div class="pool-row">
@@ -1897,15 +1996,22 @@ function initAuctionRoom() {
 function renderAuctionTeams() {
   const el = document.getElementById('auctionTeamsList');
   if (!el) return;
+  const activeBid = state.auction.inProgress ? state.auction.currentBid : 0;
+  const activeBidder = state.auction.currentBidder;
   el.innerHTML = state.teams.map(t=>{
     const os = t.players.filter(tp=>{ const p=state.players.find(x=>x.id===tp.id); return p&&p.country==='Overseas'; }).length;
-    return `<div class="mini-team-card ${state.auction.currentBidder===t.id?'active-bidder':''}" style="--tc:${t.color}" onclick="selectBidder(${t.id})">
+    const isCurrentBidder = activeBidder === t.id;
+    // Show effective budget (budget minus current bid) for active bidder
+    const effectiveBudget = isCurrentBidder ? parseFloat((t.budget - activeBid).toFixed(2)) : t.budget;
+    const budgetStyle = isCurrentBidder ? 'color:var(--gold)' : (effectiveBudget < 5 ? 'color:var(--danger)' : '');
+    const budgetLabel = isCurrentBidder ? `₹${effectiveBudget.toFixed(1)}Cr after bid` : `₹${t.budget.toFixed(1)}Cr`;
+    return `<div class="mini-team-card ${isCurrentBidder?'active-bidder':''}" style="--tc:${t.color}" onclick="selectBidder(${t.id})">
       <div style="display:flex;align-items:center;gap:.7rem">
         ${teamLogoHTML(t,52,'flex-shrink:0')}
         <div style="min-width:0">
           <div class="mini-team-name">${t.name}</div>
           <div class="mini-team-meta">
-            <span class="mini-budget">₹${t.budget.toFixed(1)}Cr</span> 
+            <span class="mini-budget" style="${budgetStyle}">${budgetLabel}</span>
             <span>${t.players.length}p · ${os}OS</span>
           </div>
         </div>
@@ -2162,52 +2268,7 @@ function enforceFeasibility(team, player, bidAmt, blockOnError = true) {
 }
 
 // ===================== UNDO =====================
-function saveSnapshot(label) {
-  lastSnapshot = {
-    label,
-    players: JSON.parse(JSON.stringify(state.players)),
-    teams:   JSON.parse(JSON.stringify(state.teams)),
-    auction: JSON.parse(JSON.stringify(state.auction)),
-    logHTML: document.getElementById('auctionLog')?.innerHTML || ''
-  };
-  document.getElementById('btnUndo').style.display = '';
-  document.getElementById('btnUndo').title = '↺ Undo: ' + label;
-}
-
-function undoLastMove() {
-  if (!lastSnapshot) return toast('Nothing to undo','info');
-  const snap = lastSnapshot;
-  lastSnapshot = null;
-
-  // Restore state
-  state.players = snap.players;
-  state.teams   = snap.teams;
-  state.auction = snap.auction;
-
-  // Restore log HTML
-  const logEl = document.getElementById('auctionLog');
-  if (logEl) logEl.innerHTML = snap.logHTML;
-
-  // Restore UI
-  if (state.auction.inProgress && state.auction.currentPlayer) {
-    renderSpotlight(state.auction.currentPlayer, true);
-    document.getElementById('btnSell').style.display = '';
-    document.getElementById('btnUnsold').style.display = '';
-  } else {
-    const pendingLeft = state.players.filter(p=>p.status==='pending').length;
-    document.getElementById('spotlightCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">${pendingLeft?'🎲':'🏆'}</div><div class="empty-state-text">${pendingLeft?'Spin for Next Player':'Auction Complete! 🏆'}</div><div class="empty-state-sub">${pendingLeft?pendingLeft+' players remaining — hit Spin':'All players have been auctioned'}</div></div>`;
-    document.getElementById('btnSell').style.display = 'none';
-    document.getElementById('btnUnsold').style.display = 'none';
-  }
-
-  document.getElementById('btnUndo').style.display = 'none';
-  // Reset status filter so restored player state is always visible
-  const sfUndo = document.getElementById('filterStatus');
-  if (sfUndo) sfUndo.value = '';
-  renderPlayerTable(); renderTeams(); renderAuctionTeams();
-  updateAuctionStats(); saveState();
-  toast('↺ Undone: ' + snap.label, 'info');
-}
+// saveSnapshot and undoLastMove now defined above with undo stack
 
 function raiseBid(amt) {
   if (!state.auction.inProgress) return;
@@ -2312,6 +2373,7 @@ function endPlayer() {
   if (sf) sf.value = '';
   renderPlayerTable(); renderTeams(); renderAuctionTeams();
   updateAuctionStats();
+  updateSpinBtn();
   saveState();
   if (!pendingLeft) toast('🏆 Auction complete!','success');
 }
@@ -2342,11 +2404,11 @@ function addLog(msg) {
 }
 
 function resetAuction() {
-  if (!confirm('Reset auction? All sales will be undone.')) return;
+  if (!confirm('⚠️ Reset Auction?\n\nThis will:\n• Undo ALL sales and unsold marks\n• Restore all team budgets\n• Clear the auction log\n• Clear all undo history\n\nThis cannot be undone. Continue?')) return;
   state.players.forEach(p=>{p.status='pending';p.soldTo=null;p.soldPrice=null;});
   state.teams.forEach(t=>{t.players=[];t.budget=t.originalBudget;});
   state.auction={queue:[],currentPlayer:null,currentBid:0,currentBidder:null,inProgress:false,log:[]};
-  lastSnapshot=null; document.getElementById('btnUndo').style.display='none';
+  undoStack=[]; document.getElementById('btnUndo').style.display='none';
   document.getElementById('btnSell').style.display='none';
   document.getElementById('btnUnsold').style.display='none';
   document.getElementById('auctionLog').innerHTML='<div style="text-align:center;padding:.75rem;color:var(--text-dim);font-size:.8rem">Auction reset.</div>';
@@ -2367,8 +2429,23 @@ function renderResults() {
   const con = state.constraints;
   const roles = ['Batsman','Bowler','All-Rounder','Wicket-Keeper'];
   const roleIcons = {'Batsman':'🏏','Bowler':'⚡','All-Rounder':'🔄','Wicket-Keeper':'🧤'};
-
-  grid.innerHTML = state.teams.map(team=>{
+  // ── Summary row ──────────────────────────────────────────────────────
+  const soldPlayers = state.players.filter(p=>p.status==='sold');
+  const totalSpent = state.teams.reduce((s,t)=>s+parseFloat((t.originalBudget-t.budget).toFixed(2)),0);
+  const totalBudget = state.teams.reduce((s,t)=>s+t.originalBudget,0);
+  const mostExpensive = soldPlayers.sort((a,b)=>b.soldPrice-a.soldPrice)[0];
+  const summaryHtml = `<div style="grid-column:1/-1;background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.15);border-radius:14px;padding:1.25rem 1.5rem;margin-bottom:.5rem;display:flex;flex-wrap:wrap;gap:1.5rem;align-items:center;">
+    <div style="font-family:Teko,sans-serif;font-size:1.1rem;font-weight:700;color:var(--gold);letter-spacing:2px;margin-right:.5rem">🏆 AUCTION SUMMARY</div>
+    <div style="display:flex;flex-wrap:wrap;gap:1.5rem;flex:1">
+      <div style="text-align:center"><div style="font-size:1.4rem;font-weight:700;color:var(--gold);font-family:Teko,sans-serif">₹${totalSpent.toFixed(1)}Cr</div><div style="font-size:.65rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">Total Spent</div></div>
+      <div style="text-align:center"><div style="font-size:1.4rem;font-weight:700;color:var(--green);font-family:Teko,sans-serif">₹${(totalBudget-totalSpent).toFixed(1)}Cr</div><div style="font-size:.65rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">Remaining</div></div>
+      <div style="text-align:center"><div style="font-size:1.4rem;font-weight:700;color:var(--cyan);font-family:Teko,sans-serif">${soldPlayers.length}</div><div style="font-size:.65rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">Players Sold</div></div>
+      <div style="text-align:center"><div style="font-size:1.4rem;font-weight:700;color:var(--danger);font-family:Teko,sans-serif">${state.players.filter(p=>p.status==='unsold').length}</div><div style="font-size:.65rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">Unsold</div></div>
+      ${mostExpensive?`<div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--orange);font-family:Teko,sans-serif">${mostExpensive.name} — ₹${mostExpensive.soldPrice.toFixed(2)}Cr</div><div style="font-size:.65rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">Most Expensive</div></div>`:''}
+    </div>
+  </div>`;
+  // Prepend summary before team cards
+  const teamCards = state.teams.map(team=>{
     const tp = team.players.map(x=>{ const p=state.players.find(y=>y.id===x.id); return p?{...p,soldPrice:x.price}:null; }).filter(Boolean);
     const spent = parseFloat((team.originalBudget-team.budget).toFixed(2));
     const os = tp.filter(p=>p.country==='Overseas').length;
@@ -2460,6 +2537,7 @@ function renderResults() {
       </div>
     </div>`;
   }).join('');
+  grid.innerHTML = summaryHtml + teamCards;
 }
 
 function downloadTeam(teamId) {
@@ -2512,9 +2590,62 @@ function bootApp() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  // Show room picker first — Firebase and app boot after room is chosen
   showRoomPicker();
 });
+
+// ── Keyboard shortcuts (active when auction tab is visible) ──
+window.addEventListener('keydown', e => {
+  if (!state) return;
+  // Don't fire if typing in an input/textarea
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  // Don't fire if room picker is open
+  if (document.getElementById('roomPickerOverlay')) return;
+
+  const auctionActive = document.getElementById('tab-auction')?.classList.contains('active');
+
+  switch(e.key) {
+    case ' ':  // Space = Spin (when not in progress)
+    case 'Enter':
+      if (auctionActive && !state.auction.inProgress) { e.preventDefault(); spinRandom(); }
+      break;
+    case 's': case 'S':  // S = Sell
+      if (auctionActive && state.auction.inProgress) sellPlayer();
+      break;
+    case 'u': case 'U':  // U = Unsold
+      if (auctionActive && state.auction.inProgress) unsoldPlayer();
+      break;
+    case 'z': case 'Z':  // Z = Undo
+      if ((e.ctrlKey || e.metaKey) || auctionActive) { e.preventDefault(); undoLastMove(); }
+      break;
+    case 'p': case 'P':  // P = Pause/Resume
+      if (auctionActive) togglePause();
+      break;
+    default:
+      // 1–9: select team by position
+      if (auctionActive && state.auction.inProgress && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key) - 1;
+        if (idx < state.teams.length) selectBidder(state.teams[idx].id);
+      }
+  }
+});
+
+// ── Keyboard shortcut hint (shown when auction tab opens) ──
+function showKeyboardHint() {
+  const existing = document.getElementById('kbHint');
+  if (existing) { existing.remove(); return; }
+  const hint = document.createElement('div');
+  hint.id = 'kbHint';
+  hint.style.cssText = `position:fixed;bottom:5rem;left:50%;transform:translateX(-50%);
+    background:rgba(13,17,32,0.95);border:1px solid rgba(255,215,0,0.2);border-radius:12px;
+    padding:.75rem 1.25rem;font-size:.72rem;color:var(--text-dim);z-index:800;
+    display:flex;gap:1.25rem;flex-wrap:wrap;justify-content:center;backdrop-filter:blur(12px);
+    font-family:'Barlow Condensed',sans-serif;letter-spacing:.5px;`;
+  hint.innerHTML = [
+    ['Space/Enter','Spin'],['S','Sell'],['U','Unsold'],['Ctrl+Z','Undo'],['P','Pause'],['1-9','Select Team']
+  ].map(([k,v])=>`<span><kbd style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:.1rem .35rem;font-size:.68rem;color:var(--gold)">${k}</kbd> ${v}</span>`).join('');
+  document.body.appendChild(hint);
+  setTimeout(()=>hint.remove(), 5000);
+}
 
 function deleteAllPlayers() {
   if (!state.players.length) return toast('No players to delete', 'info');
@@ -2545,6 +2676,33 @@ function clearAllData() {
     broadcastState();
   }
   toast('All data cleared', 'info');
+}
+
+// ── FIX 11: Pause / Resume ──
+let _auctionPaused = false;
+
+function togglePause() {
+  _auctionPaused = !_auctionPaused;
+  state.auction.paused = _auctionPaused;
+  const btn = document.getElementById('btnPause');
+  if (btn) {
+    btn.textContent = _auctionPaused ? '▶ Resume' : '⏸ Pause';
+    btn.className = _auctionPaused ? 'btn btn-gold' : 'btn btn-outline';
+  }
+  const overlay = document.getElementById('pauseOverlay');
+  if (_auctionPaused) {
+    if (!overlay) {
+      const ov = document.createElement('div');
+      ov.id = 'pauseOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(6,8,15,0.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;pointer-events:none;';
+      ov.innerHTML = '<div style="font-family:Teko,sans-serif;font-size:5rem;font-weight:700;color:rgba(255,215,0,0.35);letter-spacing:8px;text-transform:uppercase;animation:pausePulse 2s ease-in-out infinite">⏸ PAUSED</div>';
+      document.body.appendChild(ov);
+    }
+  } else {
+    overlay?.remove();
+  }
+  if (typeof broadcastState === 'function') broadcastState();
+  toast(_auctionPaused ? '⏸ Auction paused — viewers notified' : '▶ Auction resumed', 'info');
 }
 
 function clearFirebaseDB() {
