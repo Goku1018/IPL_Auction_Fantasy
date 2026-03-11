@@ -1940,7 +1940,7 @@ function renderAuctionTeams() {
       const cur = t.players.filter(tp=>{const p=state.players.find(x=>x.id===tp.id);return p&&p.role===r;}).length;
       return cur < ((con.roles[r]||{}).min||0);
     }).map(r=>`${roleIcons[r]} ${r.split('-')[0].substring(0,3)}`).join(' · ');
-    return `<div class="mini-team-card ${isCurrentBidder?'active-bidder':''}" style="--tc:${t.color}" onclick="selectBidder(${t.id})">
+    return `<div class="mini-team-card ${isCurrentBidder?'active-bidder':''}" style="--tc:${t.color};cursor:pointer" onclick="showTeamPopup(${t.id})" title="Click to view squad">
       <div style="display:flex;align-items:center;gap:.7rem">
         ${teamLogoHTML(t,52,'flex-shrink:0')}
         <div style="min-width:0;width:100%">
@@ -1968,25 +1968,86 @@ function getIncrement(currentBidCr) {
   return 1.00;                              // 20Cr+    : 1Cr steps
 }
 
-function selectBidder(teamId) {
-  if (!state.auction.inProgress) return toast('Start a player first','info');
+function showTeamPopup(teamId) {
   const team = state.teams.find(t=>t.id===teamId);
-  const p = state.auction.currentPlayer;
-  if (!team||!p) return;
-  const os = team.players.filter(tp=>{ const pl=state.players.find(x=>x.id===tp.id); return pl&&pl.country==='Overseas'; }).length;
-  if (p.country==='Overseas'&&os>=state.constraints.maxOverseas) return toast(team.code+' reached overseas cap','error');
-  if (team.budget<p.basePrice) return toast(team.code+' cannot afford this player','error');
-  // First bid on a player stays at base price; subsequent bids raise by one increment
-  const isFirstBid = (state.auction.currentBidder === null);
-  const inc = isFirstBid ? 0 : getIncrement(state.auction.currentBid);
-  const nextBid = parseFloat(Math.max(state.auction.currentBid + inc, p.basePrice).toFixed(2));
-  if (!enforceFeasibility(team, p, nextBid)) return;
-  saveSnapshot(team.code+' bidding at ₹'+state.auction.currentBid.toFixed(2)+'Cr');
-  state.auction.currentBidder = teamId;
-  state.auction.currentBid = nextBid;
-  renderAuctionTeams();
-  renderSpotlight(p, true);
-  toast(team.code+' bids ₹'+state.auction.currentBid.toFixed(2)+'Cr','info');
+  if (!team) return;
+  const con = state.constraints;
+  const roles = ['Batsman','Bowler','All-Rounder','Wicket-Keeper'];
+  const roleIcons = {'Batsman':'🏏','Bowler':'⚡','All-Rounder':'🔄','Wicket-Keeper':'🧤'};
+  const tp = team.players.map(x=>{ const p=state.players.find(y=>y.id===x.id); return p?{...p,soldPrice:x.price}:null; }).filter(Boolean);
+  const os = tp.filter(p=>p.country==='Overseas').length;
+  const ind = tp.filter(p=>p.country==='Indian').length;
+  const spent = parseFloat((team.originalBudget - team.budget).toFixed(2));
+
+  const roleSections = roles.map(role=>{
+    const rp = tp.filter(p=>p.role===role);
+    const rMin = (con.roles[role]||{}).min||0;
+    const rMax = (con.roles[role]||{}).max||99;
+    const cnt = rp.length;
+    const short = Math.max(0, rMin - cnt);
+    const reqColor = cnt < rMin ? 'var(--danger)' : cnt > rMax ? 'var(--danger)' : 'var(--green)';
+    const reqText = cnt < rMin ? `(need ${short} more)` : cnt > rMax ? `(${cnt-rMax} over max)` : '✓';
+    return `<div style="margin-bottom:.6rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem">
+        <span style="font-size:.72rem;font-weight:700;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase">${roleIcons[role]} ${role}s</span>
+        <span style="font-size:.65rem;color:${reqColor}">${cnt}/${rMin}–${rMax} ${reqText}</span>
+      </div>
+      ${rp.length ? rp.map(p=>`<div style="display:flex;justify-content:space-between;padding:.2rem .5rem;border-radius:5px;background:rgba(255,255,255,0.03);margin-bottom:.15rem;font-size:.75rem">
+        <span>${p.name} <span style="font-size:.6rem;color:var(--text-dim)">${p.country==='Indian'?'🇮🇳':'🌍'}</span></span>
+        <span style="color:var(--gold)">₹${p.soldPrice.toFixed(2)}Cr</span>
+      </div>`).join('') : `<div style="font-size:.68rem;color:var(--text-dim);padding:.15rem .5rem;font-style:italic">No ${role}s yet</div>`}
+    </div>`;
+  }).join('');
+
+  // Remove any existing popup
+  document.getElementById('teamPopupOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'teamPopupOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:8000;background:rgba(6,8,15,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  overlay.innerHTML = `
+    <div style="background:rgba(13,17,32,0.98);border:1px solid ${team.color}44;border-radius:16px;
+      max-width:420px;width:100%;max-height:85vh;overflow-y:auto;position:relative;
+      box-shadow:0 0 40px ${team.color}22;border-top:3px solid ${team.color};">
+      <!-- Header -->
+      <div style="padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07);">
+        <div style="display:flex;align-items:center;gap:.75rem">
+          ${teamLogoHTML(team,48,'flex-shrink:0')}
+          <div>
+            <div style="font-family:Teko,sans-serif;font-size:1.3rem;font-weight:700;color:${team.color}">${team.name}</div>
+            <div style="font-size:.65rem;color:var(--text-dim)">${team.code} · ${tp.length} players</div>
+          </div>
+        </div>
+        <button onclick="document.getElementById('teamPopupOverlay').remove()" style="background:rgba(255,255,255,0.07);border:none;color:var(--text-dim);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:.85rem">✕</button>
+      </div>
+      <!-- Budget stats -->
+      <div style="display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <div style="flex:1;text-align:center;padding:.75rem .5rem;border-right:1px solid rgba(255,255,255,0.07)">
+          <div style="font-family:Teko,sans-serif;font-size:1.4rem;font-weight:700;color:var(--green)">₹${team.budget.toFixed(1)}Cr</div>
+          <div style="font-size:.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Remaining</div>
+        </div>
+        <div style="flex:1;text-align:center;padding:.75rem .5rem;border-right:1px solid rgba(255,255,255,0.07)">
+          <div style="font-family:Teko,sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">₹${spent.toFixed(1)}Cr</div>
+          <div style="font-size:.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Spent</div>
+        </div>
+        <div style="flex:1;text-align:center;padding:.75rem .5rem;border-right:1px solid rgba(255,255,255,0.07)">
+          <div style="font-family:Teko,sans-serif;font-size:1.4rem;font-weight:700;color:var(--cyan)">${ind}</div>
+          <div style="font-size:.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Indian</div>
+        </div>
+        <div style="flex:1;text-align:center;padding:.75rem .5rem">
+          <div style="font-family:Teko,sans-serif;font-size:1.4rem;font-weight:700;color:var(--orange)">${os}/${con.maxOverseas}</div>
+          <div style="font-size:.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Overseas</div>
+        </div>
+      </div>
+      <!-- Squad breakdown -->
+      <div style="padding:1rem 1.25rem">
+        ${tp.length ? roleSections : '<div style="text-align:center;padding:2rem;color:var(--text-dim);font-size:.85rem">No players signed yet</div>'}
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
 }
 
 
@@ -2538,9 +2599,8 @@ function applyViewerRestrictions() {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   document.querySelectorAll('.browse-bid-btn').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.mini-team-card').forEach(el => {
-    el.style.pointerEvents = 'none'; el.style.cursor = 'default';
-  });
+  // mini-team-card clicks now show squad popup (not bid) — keep them interactive
+  // document.querySelectorAll('.mini-team-card') — intentionally left clickable
   document.querySelectorAll('#playerTableContainer button').forEach(el => el.style.display = 'none');
 }
 
