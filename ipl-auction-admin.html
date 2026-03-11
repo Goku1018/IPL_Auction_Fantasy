@@ -1085,6 +1085,121 @@ tr.editing-row td { background: rgba(255,215,0,0.05); }
 const SKEY = 'ipl_auction_v3';
 let saveTimer = null;
 
+// ===================== SESSION LOCK =====================
+// Prevents multiple admin tabs from writing conflicting state simultaneously.
+// Uses localStorage with a heartbeat so stale locks auto-expire after 8s.
+const SESSION_LOCK_KEY = 'ipl_auction_admin_lock';
+const SESSION_ID = Math.random().toString(36).slice(2); // unique per tab
+const LOCK_TTL = 8000; // ms — lock expires if no heartbeat
+let _lockHeartbeat = null;
+let _isSessionOwner = false;
+
+function getLock() {
+  try { return JSON.parse(localStorage.getItem(SESSION_LOCK_KEY)); } catch(e) { return null; }
+}
+
+function tryAcquireLock() {
+  const existing = getLock();
+  const now = Date.now();
+  // Acquire if: no lock, lock is ours, or lock has expired (tab crashed/closed)
+  if (!existing || existing.id === SESSION_ID || (now - existing.ts) > LOCK_TTL) {
+    localStorage.setItem(SESSION_LOCK_KEY, JSON.stringify({ id: SESSION_ID, ts: now }));
+    _isSessionOwner = true;
+    startLockHeartbeat();
+    hideLockOverlay();
+    return true;
+  }
+  _isSessionOwner = false;
+  showLockOverlay(existing);
+  return false;
+}
+
+function startLockHeartbeat() {
+  clearInterval(_lockHeartbeat);
+  _lockHeartbeat = setInterval(() => {
+    if (!_isSessionOwner) return;
+    localStorage.setItem(SESSION_LOCK_KEY, JSON.stringify({ id: SESSION_ID, ts: Date.now() }));
+  }, 3000);
+}
+
+function releaseLock() {
+  clearInterval(_lockHeartbeat);
+  const existing = getLock();
+  if (existing && existing.id === SESSION_ID) localStorage.removeItem(SESSION_LOCK_KEY);
+  _isSessionOwner = false;
+}
+
+function takeOverSession() {
+  releaseLock(); // clear any existing reference
+  localStorage.setItem(SESSION_LOCK_KEY, JSON.stringify({ id: SESSION_ID, ts: Date.now() }));
+  _isSessionOwner = true;
+  startLockHeartbeat();
+  hideLockOverlay();
+  // Re-sync state from Firebase payload if available — done via page reload for clean state
+  toast('✅ This tab is now the active admin', 'success');
+}
+
+function showLockOverlay() {
+  let overlay = document.getElementById('sessionLockOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'sessionLockOverlay';
+    overlay.style.cssText = `
+      position:fixed;inset:0;z-index:9000;
+      background:rgba(6,8,15,0.92);backdrop-filter:blur(12px);
+      display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1rem;
+      font-family:'Barlow',sans-serif;text-align:center;padding:2rem;
+    `;
+    overlay.innerHTML = `
+      <div style="font-size:3rem">🔒</div>
+      <div style="font-family:'Teko',sans-serif;font-size:2rem;font-weight:700;color:#FFD700;letter-spacing:2px">ADMIN ALREADY OPEN</div>
+      <div style="color:#7B85B0;font-size:.95rem;max-width:480px;line-height:1.7">
+        Another tab or browser already has admin control of this auction.<br/>
+        <strong style="color:#F0F2FF">Only one admin tab should be active at a time</strong> to prevent conflicting state and feasibility errors.
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:.5rem;flex-wrap:wrap;justify-content:center">
+        <button onclick="takeOverSession()" style="
+          padding:.65rem 1.4rem;border-radius:8px;border:none;cursor:pointer;font-weight:700;
+          font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
+          background:linear-gradient(135deg,#FFD700,#FF6B1A);color:#000;
+        ">⚡ Take Over as Admin</button>
+        <button onclick="window.close()" style="
+          padding:.65rem 1.4rem;border-radius:8px;cursor:pointer;font-weight:700;
+          font-family:'Barlow Condensed',sans-serif;font-size:.9rem;letter-spacing:1px;text-transform:uppercase;
+          background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#7B85B0;
+        ">✕ Close This Tab</button>
+      </div>
+      <div style="font-size:.72rem;color:#7B85B0;margin-top:.25rem">
+        If the other admin tab was closed accidentally, click <em>Take Over</em> — the lock expires automatically after 8 seconds.
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+  // Also disable all interactive controls underneath so keyboard shortcuts can't fire
+  document.querySelectorAll('button, input, select').forEach(el => el.disabled = true);
+}
+
+function hideLockOverlay() {
+  const overlay = document.getElementById('sessionLockOverlay');
+  if (overlay) overlay.remove();
+  // Re-enable all controls
+  document.querySelectorAll('button, input, select').forEach(el => el.disabled = false);
+}
+
+// Poll every 2s to detect when current owner releases the lock (tab closed/crashed)
+setInterval(() => {
+  if (_isSessionOwner) return; // we own it, nothing to do
+  const existing = getLock();
+  if (!existing || (Date.now() - existing.ts) > LOCK_TTL) {
+    // Lock expired — auto-acquire
+    tryAcquireLock();
+  }
+}, 2000);
+
+// Release lock cleanly when tab is closed
+window.addEventListener('beforeunload', releaseLock);
+
 function defaultState() {
   return {
     teams: [], players: [],
@@ -2408,6 +2523,9 @@ function downloadAllTeams(fmt='xlsx') {
 
 // ===================== BOOT =====================
 window.addEventListener('DOMContentLoaded', ()=>{
+  // Acquire session lock — shows overlay and blocks controls if another tab is already admin
+  tryAcquireLock();
+
   const hasData = state.teams.length>0||state.players.length>0;
   if (hasData) {
     const b=document.createElement('div'); b.className='storage-banner'; b.id='storageBanner';
