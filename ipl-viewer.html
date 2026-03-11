@@ -2462,7 +2462,29 @@ try {
 
   onValue(dbRef, (snapshot) => {
     const data = snapshot.val();
-    if (!data || !data.payload) return;
+    // ── Database wiped (remove() called by admin) — reset viewer to blank state ──
+    if (!data || !data.payload) {
+      stopViewerSpin();
+      window.state = {
+        teams: [], players: [],
+        constraints: { minSquad:15, maxSquad:25, maxOverseas:8, minIndian:14,
+          roles: { 'Batsman':{min:4,max:8},'Bowler':{min:4,max:8},'All-Rounder':{min:2,max:6},'Wicket-Keeper':{min:1,max:3} } },
+        auction: { queue:[], currentPlayer:null, currentBid:0, currentBidder:null, inProgress:false, log:[] }
+      };
+      state = window.state;
+      updatePlayerUI(); updateMatchCount();
+      renderPlayerTable(); renderResults();
+      if (document.getElementById('auctionTeamsList')) renderAuctionTeams();
+      if (typeof updateAuctionStats === 'function') updateAuctionStats();
+      const card = document.getElementById('spotlightCard');
+      if (card) card.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎲</div><div class="empty-state-text">Waiting for Admin to Spin</div><div class="empty-state-sub">Auction not started yet</div></div>';
+      const logEl = document.getElementById('auctionLog');
+      if (logEl) logEl.innerHTML = '<div style="text-align:center;padding:.75rem;color:var(--text-dim);font-size:.8rem">Auction log appears here…</div>';
+      document.getElementById('btnSell') && (document.getElementById('btnSell').style.display = 'none');
+      document.getElementById('btnUnsold') && (document.getElementById('btnUnsold').style.display = 'none');
+      if (ping) { ping.style.opacity = '1'; ping.textContent = '🔄 Cleared'; clearTimeout(ping._t); ping._t = setTimeout(() => { ping.style.opacity = '0.4'; ping.textContent = '● LIVE'; }, 3000); }
+      return;
+    }
     try {
       window.state = JSON.parse(data.payload);
       state = window.state;
