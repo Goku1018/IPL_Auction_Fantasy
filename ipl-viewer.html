@@ -1700,7 +1700,7 @@ function spinRandom() {
   btn.disabled=true; btn.classList.add('pulsing'); btn.textContent='\u23F3';
 
   const sc = document.getElementById('spotlightCard');
-  let spins=0, total=16+Math.floor(Math.random()*10);
+  let spins=0, total=Math.round(3000/85); // fixed 3-second spin
   if (spinInterval) { clearInterval(spinInterval); spinInterval=null; }
 
   spinInterval = setInterval(()=>{

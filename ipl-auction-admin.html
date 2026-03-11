@@ -1789,16 +1789,12 @@ function spinRandom() {
   btn.disabled=true; btn.classList.add('pulsing'); btn.textContent='\u23F3';
 
   const sc = document.getElementById('spotlightCard');
-  let spins=0, total=16+Math.floor(Math.random()*10);
+  let spins=0, total=Math.round(3000/85); // fixed 3-second spin
   if (spinInterval) { clearInterval(spinInterval); spinInterval=null; }
 
-  // Signal spin start to viewer via Firebase
+  // Signal spin start to viewer via Firebase — single write only
   state.auction.spinning = true;
   state.auction.spinName = null;
-  if (typeof broadcastState === 'function') broadcastState();
-
-  // Tell viewer: spin is starting (no per-frame spam needed)
-  state.auction.spinning = true;
   state.auction.notification = null; // clear any old notification
   if (typeof broadcastState === 'function') broadcastState();
 
