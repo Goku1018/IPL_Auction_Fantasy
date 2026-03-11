@@ -2413,7 +2413,11 @@ function resetAuction() {
 // ===================== RESULTS =====================
 function renderResults() {
   const grid = document.getElementById('resultsGrid');
-  if (!state.teams.length) return;
+  if (!grid) return;
+  if (!state.teams.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:3rem"><div class="empty-state-icon">🏆</div><div class="empty-state-text">No Results Yet</div><div class="empty-state-sub">Results will appear here once teams are set up and players are sold</div></div>';
+    return;
+  }
   const con = state.constraints;
   const roles = ['Batsman','Bowler','All-Rounder','Wicket-Keeper'];
   const roleIcons = {'Batsman':'🏏','Bowler':'⚡','All-Rounder':'🔄','Wicket-Keeper':'🧤'};
