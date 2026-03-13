@@ -2572,7 +2572,7 @@ function showRoomPicker() {
         <input id="passcodeInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="····" maxlength="4" autocomplete="off"
           style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(0,230,118,0.3);border-radius:8px;
                  padding:.7rem 1rem;color:#00E676;font-family:Teko,sans-serif;font-size:1.6rem;letter-spacing:.5rem;outline:none;box-sizing:border-box;text-align:center;"
-          onkeydown="if(event.key==='Enter')enterRoom()" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"/>
+          onkeydown="if(event.key==='Enter')enterRoom()" oninput="this.value=this.value.replace(/\D/g,'').slice(0,4)"/>
       </div>
       <div id="roomErrorMsg" style="color:#FF4757;font-size:.72rem;margin-bottom:.6rem;min-height:1.1rem"></div>
       <button id="joinBtn" onclick="enterRoom()" style="

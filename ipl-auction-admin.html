@@ -1147,7 +1147,7 @@ function showRoomPicker() {
         <input id="passcodeInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 1234" maxlength="4" autocomplete="off"
           style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,215,0,0.3);border-radius:8px;
                  padding:.7rem 1rem;color:#FFD700;font-family:Teko,sans-serif;font-size:1.6rem;letter-spacing:.5rem;outline:none;box-sizing:border-box;text-align:center;"
-          onkeydown="if(event.key==='Enter')enterRoom()" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"/>
+          onkeydown="if(event.key==='Enter')enterRoom()" oninput="this.value=this.value.replace(/\D/g,'').slice(0,4)"/>
         <div style="font-size:.65rem;color:#7B85B0;margin-top:.3rem">Viewers must enter this to join. Share it along with the room name.</div>
       </div>
       <div id="roomErrorMsg" style="color:#FF4757;font-size:.72rem;margin-bottom:.6rem;display:none"></div>
@@ -1956,7 +1956,9 @@ function renderSpotlight(p, isCurrent=false) {
     </div>
     ${bidHistoryHtml}
     <div class="bid-custom-row">
-      <input type="number" id="customBidInput" placeholder="Custom bid (Cr)" min="${p.basePrice}" step="0.05" onkeydown="if(event.key==='Enter')setCustomBid()"/>
+      <input type="number" id="customBidInput" placeholder="Custom bid (Cr)" min="${p.basePrice}" step="0.05"
+        oninput="previewCustomBid(this.value)"
+        onkeydown="if(event.key==='Enter')setCustomBid()"/>
       <button class="btn btn-gold btn-sm" onclick="setCustomBid()" style="white-space:nowrap">🎯 Set Bid</button>
     </div>`:''}`;
 }
@@ -2354,6 +2356,30 @@ function raiseBid(amt) {
   renderSpotlight(state.auction.currentPlayer, true);
 }
 
+// Live preview: update team card "after bid" value as user types in custom bid input
+function previewCustomBid(rawVal) {
+  const val = parseFloat(rawVal);
+  if (!state.auction.inProgress || !state.auction.currentBidder) return;
+  // Temporarily use typed value (if valid & higher) for the team card display, else fall back to current bid
+  const previewBid = (!isNaN(val) && val > 0) ? val : state.auction.currentBid;
+  const activeBidder = state.auction.currentBidder;
+  const el = document.getElementById('auctionTeamsList');
+  if (!el) return;
+  // Re-render just the budget labels without touching state
+  el.querySelectorAll('.mini-team-card').forEach(card => {
+    const teamId = parseInt(card.getAttribute('onclick')?.match(/\d+/)?.[0]);
+    if (!teamId) return;
+    const t = state.teams.find(x => x.id === teamId);
+    if (!t) return;
+    const isCurrentBidder = teamId === activeBidder;
+    const effectiveBudget = isCurrentBidder ? parseFloat((t.budget - previewBid).toFixed(2)) : t.budget;
+    const budgetEl = card.querySelector('.mini-budget');
+    if (!budgetEl) return;
+    budgetEl.textContent = isCurrentBidder ? `₹${effectiveBudget.toFixed(1)}Cr after bid` : `₹${t.budget.toFixed(1)}Cr`;
+    budgetEl.style.color = isCurrentBidder ? 'var(--gold)' : (effectiveBudget < 5 ? 'var(--danger)' : '');
+  });
+}
+
 function setCustomBid() {
   if (!state.auction.inProgress) return;
   const team = state.teams.find(t=>t.id===state.auction.currentBidder);
@@ -2371,6 +2397,7 @@ function setCustomBid() {
   state.auction.currentBid = newBid;
   input.value = '';
   renderSpotlight(p, true);
+  renderAuctionTeams();
   saveState(); // sync custom bid to Firebase
   toast(team.code+' custom bid ₹'+newBid.toFixed(2)+'Cr','info');
 }
