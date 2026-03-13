@@ -1165,10 +1165,12 @@ function enterRoom() {
   const rawName = (document.getElementById('roomNameInput')?.value || '').trim();
   const rawPass = (document.getElementById('passcodeInput')?.value || '').trim();
   const errEl = document.getElementById('roomErrorMsg');
+  const btn = document.querySelector('#roomPickerOverlay button[onclick="enterRoom()"]');
 
   const name = normalizeRoomName(rawName);
   if (!name) {
     document.getElementById('roomNameInput').style.borderColor='#FF4757';
+    if (errEl) { errEl.textContent = 'Enter a room name.'; errEl.style.display='block'; }
     document.getElementById('roomNameInput').focus();
     return;
   }
@@ -1178,7 +1180,30 @@ function enterRoom() {
     document.getElementById('passcodeInput').focus();
     return;
   }
-  _bootWithRoom(name, rawPass);
+
+  if (errEl) { errEl.textContent = ''; errEl.style.display='none'; }
+  if (btn) { btn.textContent = '⏳ Checking...'; btn.disabled = true; }
+
+  if (typeof checkAdminRoomPasscode === 'function') {
+    checkAdminRoomPasscode(name, rawPass, (result) => {
+      if (result.matches) {
+        _bootWithRoom(name, rawPass);
+      } else {
+        // Room exists with a different passcode — block entry
+        if (errEl) {
+          errEl.textContent = '❌ Room "' + name + '" already exists with a different passcode. Enter the correct passcode to continue.';
+          errEl.style.display = 'block';
+        }
+        if (btn) { btn.textContent = '▶ Enter Room'; btn.disabled = false; }
+        document.getElementById('passcodeInput').style.borderColor = '#FF4757';
+        document.getElementById('passcodeInput').value = '';
+        document.getElementById('passcodeInput').focus();
+      }
+    });
+  } else {
+    // Firebase not ready yet — enter anyway (will sync once loaded)
+    _bootWithRoom(name, rawPass);
+  }
 }
 
 function _bootWithRoom(name, passcode) {
@@ -2740,7 +2765,7 @@ function clearFirebaseDB() {
 <script type="module">
 // ===================== FIREBASE REAL-TIME SYNC =====================
 import { initializeApp }              from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, set, remove, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyD0usX707N56yMvwwLT3qn0zeXVuG2mxSg",
@@ -2758,14 +2783,34 @@ try {
   const app = initializeApp(firebaseConfig);
   const db  = getDatabase(app);
 
+  // Check if a room already has a passcode set in Firebase.
+  // callback({ exists: bool, matches: bool })
+  window.checkAdminRoomPasscode = function(roomName, passcode, callback) {
+    const metaRef = ref(db, 'room_meta/' + roomName + '/passcode');
+    get(metaRef).then(snap => {
+      const stored = snap.val();
+      if (stored === null || stored === undefined) {
+        callback({ exists: false, matches: true }); // new room — no passcode set yet
+      } else {
+        callback({ exists: true, matches: String(stored) === String(passcode) });
+      }
+    }).catch(e => {
+      console.warn('Room check failed:', e.message);
+      callback({ exists: false, matches: true }); // network error — allow through
+    });
+  };
+
   // Called by enterRoom() after the room name is chosen
   window.initFirebaseForRoom = function (roomName, passcode) {
     _fbRef = ref(db, 'auction_rooms/' + roomName);
-    // Write passcode to room meta so viewers can verify
-    if (passcode) {
-      set(ref(db, 'room_meta/' + roomName + '/passcode'), passcode)
-        .catch(e => console.warn('Meta write failed:', e.message));
-    }
+    // Only write passcode if it doesn't exist yet (first creation).
+    // Verified upstream by checkAdminRoomPasscode before this is called.
+    get(ref(db, 'room_meta/' + roomName + '/passcode')).then(snap => {
+      if (!snap.exists()) {
+        set(ref(db, 'room_meta/' + roomName + '/passcode'), passcode)
+          .catch(e => console.warn('Meta write failed:', e.message));
+      }
+    });
     console.log('Firebase connected ✅ — room:', roomName);
 
     window.broadcastState = function () {
@@ -2790,6 +2835,7 @@ try {
 
 } catch (e) {
   console.error('Firebase init failed:', e.message);
+  window.checkAdminRoomPasscode = function(room, pass, cb) { cb({ exists: false, matches: true }); };
   window.initFirebaseForRoom = function () {};
   window.broadcastState = function () {};
   window.removeFirebaseDB = function () {};

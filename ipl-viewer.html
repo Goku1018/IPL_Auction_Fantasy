@@ -1842,24 +1842,25 @@ function renderSpotlight(p, isCurrent=false) {
       <div class="bid-amount pulse">₹${state.auction.currentBid.toFixed(2)} Cr</div>
       <div class="bid-team-name">${bidderTeam?'🏟️ '+bidderTeam.name:'No bid yet'}</div>
     </div>
-    ${(()=>{
-      const hist = state.auction.bidHistory || [];
-      if (!hist.length) return '';
-      const rows = [...hist].reverse().slice(0,5).map(entry=>{
-        const bidder = state.teams.find(t=>t.id===entry.teamId);
-        return bidder
-          ? '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.68rem;padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
-            + '<span style="color:'+bidder.color+';font-weight:600">'+bidder.code+'</span>'
-            + '<span style="color:var(--text-dim)">&#8377;'+entry.bid.toFixed(2)+'Cr</span></div>'
-          : '';
-      }).filter(Boolean).join('');
-      return rows
-        ? '<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">'
-          + '<div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid Trail</div>'
-          + rows + '</div>'
-        : '';
-    })()}
+    ${_buildBidTrailHtml()}
 `:''}`;
+}
+
+function _buildBidTrailHtml() {
+  const hist = state.auction.bidHistory || [];
+  if (!hist.length) return '';
+  const rows = [...hist].reverse().slice(0,5).map(entry => {
+    const bidder = state.teams.find(t => t.id === entry.teamId);
+    return bidder
+      ? '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.68rem;padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+        + '<span style="color:'+bidder.color+';font-weight:600">'+bidder.code+'</span>'
+        + '<span style="color:var(--text-dim)">&#8377;'+entry.bid.toFixed(2)+'Cr</span></div>'
+      : '';
+  }).filter(Boolean).join('');
+  if (!rows) return '';
+  return '<div style="margin:.4rem 0;padding:.4rem .6rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06)">'
+    + '<div style="font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:.25rem">Bid Trail</div>'
+    + rows + '</div>';
 }
 
 function browseStartAuction(id) {
